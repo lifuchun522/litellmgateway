@@ -1,0 +1,16 @@
+model_type: ACTOR
+version: "1.0"
+domain: "LLM Gateway"
+
+roles:
+  - { roleId: ROLE-PLATFORM-ADMIN, name: 平台管理员, permissions: [RESOURCE_WRITE, POLICY_WRITE, POLICY_PUBLISH, OBSERVE_READ] }
+  - { roleId: ROLE-SECURITY-ADMIN, name: 安全管理员, permissions: [SECRET_WRITE, SECURITY_APPROVE, AUDIT_READ] }
+  - { roleId: ROLE-SRE, name: SRE, permissions: [POLICY_APPROVE, HEALTH_WRITE, EMERGENCY_APPROVE, OBSERVE_READ] }
+  - { roleId: ROLE-FINOPS, name: FinOps, permissions: [PRICE_WRITE, BUDGET_APPROVE, COST_READ, RECONCILIATION_WRITE] }
+  - { roleId: ROLE-APP-OWNER, name: 应用负责人, permissions: [OWN_APP_READ, OWN_USAGE_READ, EMERGENCY_REQUEST] }
+  - { roleId: ROLE-AUDITOR, name: 审计员, permissions: [AUDIT_READ, CONFIG_READ, COST_READ] }
+  - { roleId: ROLE-AI-ASSISTANT, name: AI助手, permissions: [SEMANTIC_READ, DRAFT_SUGGEST] }
+
+constraints:
+  - { id: ACT-001, name: 禁止自批, expression: submitterId != approverId }
+  - { id: ACT-002, name: AI禁止直接写入, expression: actor != ROLE-AI-ASSISTANT for COMMAND }

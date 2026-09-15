@@ -1,0 +1,23 @@
+model_type: FLOW
+version: "1.0"
+domain: "LLM Gateway"
+
+flows:
+  - id: FLOW-POLICY-PUBLISH
+    name: 策略审批发布
+    flowType: APPROVAL
+    businessObjectRefs: [OBJ-06, OBJ-15]
+    trigger: { triggerType: BEHAVIOR, behaviorRef: Policy_Submit }
+    nodes: [提交, 安全审批, SRE审批, 策略模拟, 编译分发, 原子激活, 完成]
+  - id: FLOW-EMERGENCY-AUTH
+    name: 应急直连双批
+    flowType: APPROVAL
+    businessObjectRefs: [OBJ-18]
+    trigger: { triggerType: BEHAVIOR, behaviorRef: Emergency_Submit }
+    nodes: [申请, 安全审批, SRE审批, 限时生效, 自动到期]
+  - id: FLOW-RECONCILIATION
+    name: 每日成本对账
+    flowType: AUTOMATION
+    businessObjectRefs: [OBJ-13, OBJ-17]
+    trigger: { triggerType: SCHEDULE, cron: "0 2 * * *" }
+    nodes: [拉取账单, 聚合内部成本, 计算差异, 异常调查, 关闭]

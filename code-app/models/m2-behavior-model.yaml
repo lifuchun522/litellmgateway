@@ -1,0 +1,27 @@
+model_type: BEHAVIOR
+version: "1.0"
+domain: "LLM Gateway"
+
+behaviors:
+  - { id: Application_Manage, name: 管理应用与凭证, behaviorType: COMMAND, targetAggregate: OBJ-01 }
+  - { id: Resource_Manage, name: 管理供应商端点与别名, behaviorType: COMMAND, targetAggregate: OBJ-05 }
+  - { id: Policy_SaveDraft, name: 保存策略草稿, behaviorType: COMMAND, targetAggregate: OBJ-06 }
+  - id: Policy_Submit
+    name: 提交策略审批
+    behaviorType: COMMAND
+    targetAggregate: OBJ-06
+    syncTriggers: [{ flowRef: FLOW-POLICY-PUBLISH }]
+  - { id: Policy_Simulate, name: 策略模拟, behaviorType: COMMAND, targetAggregate: OBJ-06 }
+  - { id: Policy_Publish, name: 编译发布快照, behaviorType: COMMAND, targetAggregate: OBJ-15 }
+  - { id: Gateway_Invoke, name: 执行网关调用, behaviorType: COMMAND, targetAggregate: OBJ-09 }
+  - { id: Gateway_Stream, name: 执行流式调用, behaviorType: COMMAND, targetAggregate: OBJ-09 }
+  - { id: Reconciliation_Run, name: 执行每日对账, behaviorType: COMMAND, targetAggregate: OBJ-13 }
+  - id: Emergency_Submit
+    name: 提交应急直连申请
+    behaviorType: COMMAND
+    targetAggregate: OBJ-18
+    syncTriggers: [{ flowRef: FLOW-EMERGENCY-AUTH }]
+  - { id: Cost_Query, name: 查询成本分析, behaviorType: QUERY, targetAggregate: OBJ-11 }
+  - { id: Trace_Query, name: 查询请求尝试链路, behaviorType: QUERY, targetAggregate: OBJ-09 }
+  - { id: Health_Query, name: 查询端点健康, behaviorType: QUERY, targetAggregate: OBJ-16 }
+  - { id: Assistant_Query, name: AI 只读语义查询, behaviorType: QUERY, targetAggregate: OBJ-19 }

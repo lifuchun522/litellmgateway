@@ -1,0 +1,21 @@
+model_type: UI
+version: "1.0"
+domain: "LLM Gateway"
+
+application:
+  name: LLM Gateway 控制台
+  layout: { type: three-column, sidebar: 250px, assistant: 400px, collapsedAssistant: 60px }
+  menus:
+    - { menuId: dashboard, name: 运行总览, screenRef: Dashboard }
+    - { menuId: access, name: 接入管理, screenRef: AccessManagement }
+    - { menuId: resources, name: 模型资源, screenRef: ModelResources }
+    - { menuId: policies, name: 策略发布, screenRef: PolicyCenter }
+    - { menuId: observability, name: 调用观测, screenRef: Observability }
+    - { menuId: costs, name: 成本对账, screenRef: CostCenter }
+    - { menuId: settings, name: 系统设置, screenRef: Settings }
+
+assistant:
+  mode: READ_ONLY_WITH_DRAFT_SUGGESTION
+  placement: RIGHT_PANEL
+  tools: [Cost_Query, Trace_Query, Health_Query, Policy_Simulate]
+  streamEvents: [message_start, delta, tool_call, tool_result, render_payload, message_end]

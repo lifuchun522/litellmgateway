@@ -16,6 +16,9 @@
 *.nar
 *.ear
 *.zip
+
+# Local browser automation state
+output/playwright/.playwright-cli/
 *.tar.gz
 *.rar
 

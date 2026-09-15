@@ -1,0 +1,9 @@
+model_type: REPORT
+version: "1.0"
+domain: "LLM Gateway"
+
+query_reports:
+  - { id: Q01, name: 成本分析, source: UsageRecord, dimensions: [application, alias, provider, endpoint, day], measures: [requests, attempts, tokens, cost] }
+  - { id: Q02, name: 请求尝试链路, source: GatewayRequest, dimensions: [traceId], measures: [status, latency, attempts, fallback] }
+  - { id: Q03, name: 对账差异, source: ReconciliationDifference, dimensions: [provider, billingDate], measures: [internalAmount, providerAmount, differenceRate] }
+  - { id: Q04, name: SLA 与健康, source: EndpointRuntimeState, dimensions: [provider, endpoint, timeBucket], measures: [successRate, p95Latency, firstTokenLatency, circuitState] }

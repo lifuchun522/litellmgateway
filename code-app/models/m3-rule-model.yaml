@@ -1,0 +1,21 @@
+model_type: RULE
+version: "1.0"
+domain: "LLM Gateway"
+
+rules:
+  - { id: R001, name: 凭证绑定身份, expression: credential.applicationId == request.applicationId, effect: DENY }
+  - { id: R002, name: 策略继承优先级, expression: global < alias < application < application_alias, effect: RESOLVE }
+  - { id: R003, name: 能力匹配, expression: endpoint.capability contains request.capability, effect: FILTER }
+  - { id: R004, name: 数据等级匹配, expression: endpoint.dataGrade >= request.minimumDataGrade, effect: FILTER }
+  - { id: R005, name: 发布完整性, expression: simulation.pass and gatewayAckPerAz >= 1, effect: BLOCK_PUBLISH }
+  - { id: R006, name: 配额预算, expression: quota.remaining > 0 and budget.remaining >= estimatedCost, effect: DENY }
+  - { id: R007, name: 尝试上限, expression: totalAttempts <= 3 and attemptsPerEndpoint <= 1, effect: STOP }
+  - { id: R008, name: 首字节边界, expression: retryAllowed only if firstByteAt is null, effect: STOP }
+  - { id: R009, name: 双口径计量, expression: businessCount = 1 and billedAttempts = allAttempts, effect: ACCOUNT }
+  - { id: R010, name: 对账阈值, expression: differenceRate > 0.03, effect: FLAG }
+  - { id: R011, name: 应急授权时限, expression: endsAt - startsAt <= 4h, effect: DENY }
+  - { id: R012, name: 熔断阈值, expression: window=30s and samples>=20 and failureRate>=0.5, effect: OPEN_30S }
+  - { id: R013, name: 计量补偿, expression: upstreamSuccess and accountingFailure, effect: RETURN_AND_OUTBOX }
+  - { id: R014, name: 快照连续性, expression: activationFailure, effect: KEEP_PREVIOUS }
+  - { id: R015, name: 全链路审计, expression: governedAction, effect: APPEND_AUDIT }
+  - { id: R016, name: 密钥不落明文, expression: persistedSecret is reference_or_mask, effect: DENY }

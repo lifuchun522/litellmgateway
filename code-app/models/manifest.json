@@ -1,0 +1,17 @@
+{
+  "model_type": "MANIFEST",
+  "version": "1.0",
+  "domain": "LLM Gateway",
+  "project": "litellm-gateway",
+  "source_requirements": "../../LLM网关-需求规格说明书-V9.md",
+  "reference_implementation": "open-api.zip",
+  "model_files": [
+    "m1-object-model.yaml",
+    "m2-behavior-model.yaml",
+    "m3-rule-model.yaml",
+    "m4-report-model.yaml",
+    "m5-actor-model.yaml",
+    "m6-flow-model.yaml",
+    "mu-ui-model.yaml"
+  ]
+}

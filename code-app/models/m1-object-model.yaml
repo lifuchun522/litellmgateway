@@ -1,0 +1,38 @@
+model_type: OBJECT
+version: "1.0"
+domain: "LLM Gateway"
+
+defaults:
+  logicalDelete: { field: flag, activeValue: 0, deletedValue: 1 }
+  commonAttributes: [id, createdAt, updatedAt, createdBy, updatedBy, flag]
+
+aggregates:
+  - { id: OBJ-01, name: 应用, alias: Application, lifecycle: [草稿, 启用, 暂停, 退役], keyAttributes: [code, name, owner, dataGrade] }
+  - { id: OBJ-02, name: 应用凭证, alias: AppCredential, lifecycle: [待签发, 有效, 停用, 到期, 撤销], keyAttributes: [applicationId, keyPrefix, secretHash, expiresAt] }
+  - { id: OBJ-03, name: 业务模型别名, alias: ModelAlias, lifecycle: [草稿, 启用, 停用, 退役], keyAttributes: [code, displayName, capability, minimumDataGrade] }
+  - { id: OBJ-04, name: 模型供应商, alias: Provider, lifecycle: [草稿, 启用, 停用, 退役], keyAttributes: [code, name, providerType, region] }
+  - { id: OBJ-05, name: 模型端点, alias: ModelEndpoint, lifecycle: [草稿, 启用, 停用, 退役], keyAttributes: [providerId, modelName, baseUrl, capability, dataGrade] }
+  - { id: OBJ-06, name: 路由策略, alias: RoutingPolicy, lifecycle: [草稿, 待审批, 已批准, 已发布, 已取代, 驳回], keyAttributes: [scopeType, applicationId, aliasId, version] }
+  - { id: OBJ-07, name: 路由候选项, alias: RouteCandidate, lifecycle: [草稿, 生效, 失效], keyAttributes: [policyId, endpointId, priority, weight] }
+  - { id: OBJ-08, name: 配额与限流策略, alias: QuotaPolicy, lifecycle: [草稿, 待审批, 生效, 已取代, 撤销], keyAttributes: [applicationId, aliasId, rpm, tpm, concurrency, budget] }
+  - { id: OBJ-09, name: 业务请求, alias: GatewayRequest, lifecycle: [已接收, 路由中, 流式传输, 成功, 失败, 取消, 流中断], keyAttributes: [traceId, applicationId, aliasId, snapshotVersion] }
+  - { id: OBJ-10, name: 上游尝试, alias: UpstreamAttempt, lifecycle: [已创建, 调用中, 成功, 失败, 超时, 取消], keyAttributes: [requestId, sequence, endpointId, firstByteAt] }
+  - { id: OBJ-11, name: 用量记录, alias: UsageRecord, lifecycle: [待计量, 已计量, 补偿中, 已终结], keyAttributes: [requestId, attemptId, inputTokens, outputTokens, cost] }
+  - { id: OBJ-12, name: 价格快照, alias: PriceSnapshot, lifecycle: [草稿, 生效, 到期, 已取代], keyAttributes: [endpointId, inputPrice, outputPrice, currency, effectiveFrom] }
+  - { id: OBJ-13, name: 对账批次, alias: ReconciliationBatch, lifecycle: [待执行, 执行中, 匹配, 异常, 已关闭], keyAttributes: [providerId, billingDate, internalAmount, providerAmount] }
+  - { id: OBJ-14, name: 密钥引用, alias: SecretReference, lifecycle: [待生效, 生效, 轮换中, 到期, 撤销], keyAttributes: [providerId, vaultPath, maskedValue, version] }
+  - { id: OBJ-15, name: 策略快照, alias: PolicySnapshot, lifecycle: [已生成, 生效, 到期, 撤销], keyAttributes: [version, checksum, compiledContent, activatedAt] }
+  - { id: OBJ-16, name: 端点运行状态, alias: EndpointRuntimeState, lifecycle: [CLOSED, OPEN, HALF_OPEN], keyAttributes: [endpointId, windowStartedAt, sampleCount, failureRate] }
+  - { id: OBJ-17, name: 对账差异, alias: ReconciliationDifference, lifecycle: [待调查, 调查中, 已解决], keyAttributes: [batchId, dimensionKey, differenceAmount, differenceRate] }
+  - { id: OBJ-18, name: 应急直连授权, alias: EmergencyAuthorization, lifecycle: [草稿, 待审批, 已批准, 生效, 到期, 撤销, 驳回], keyAttributes: [applicationId, aliasId, endpointId, startsAt, endsAt] }
+  - { id: OBJ-19, name: 审计事件, alias: AuditEvent, lifecycle: [已记录, 已归档], keyAttributes: [eventType, actorId, objectType, objectId, occurredAt] }
+
+relationships:
+  - { id: REF-001, from: OBJ-01, to: OBJ-02, cardinality: one-to-many, name: 拥有凭证 }
+  - { id: REF-002, from: OBJ-04, to: OBJ-05, cardinality: one-to-many, name: 暴露端点 }
+  - { id: REF-003, from: OBJ-06, to: OBJ-07, cardinality: one-to-many, name: 包含候选 }
+  - { id: REF-004, from: OBJ-07, to: OBJ-05, cardinality: many-to-one, name: 指向端点 }
+  - { id: REF-005, from: OBJ-09, to: OBJ-10, cardinality: one-to-many, name: 包含尝试 }
+  - { id: REF-006, from: OBJ-10, to: OBJ-11, cardinality: one-to-many, name: 产生用量 }
+  - { id: REF-007, from: OBJ-06, to: OBJ-15, cardinality: one-to-many, name: 编译为快照 }
+  - { id: REF-008, from: OBJ-13, to: OBJ-17, cardinality: one-to-many, name: 包含差异 }
