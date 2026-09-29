@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QVSU OpenAPI 管理与网关服务 · 架构逆向结论（SYS-qvsu-openapi）</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>window.echarts||document.write('<scr'+'ipt src="https://unpkg.com/echarts@5.5.1/dist/echarts.min.js"><\/scr'+'ipt>');</script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#E8E8E8;overflow:hidden;
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC","Noto Sans SC","Helvetica Neue",Arial,sans-serif}
+  #viewport{position:fixed;inset:0;overflow:hidden}
+  #stage{position:absolute;top:0;left:0;width:1920px;height:1080px;transform-origin:top left}
+  .slide{position:absolute;top:0;left:0;width:1920px;height:1080px;background:#FFFFFF;padding:20px;display:none}
+  .slide.on{display:block}
+
+  /* 标题区 y20–170（高 150）；标题 48px / 700 / 左对齐 / 垂直居中 */
+  .title-zone{height:150px;display:flex;align-items:center;justify-content:space-between}
+  .title-zone h1{font-size:48px;font-weight:700;color:#333333;line-height:1.2;max-width:1440px}
+  .kicker{font-size:18px;font-weight:600;color:#A3A3A3;letter-spacing:4px;text-transform:uppercase;white-space:nowrap;padding-left:24px}
+  /* y=170 处 5px 纯黑分隔线，横向拉通 x 0–1920 */
+  .rule{height:5px;background:#000000;margin:0 -20px}
+  /* 内容区 y175–1060（1880×885） */
+  .body{position:relative;height:885px;display:flex;flex-direction:column;justify-content:center;gap:44px}
+
+  .main{display:flex;gap:60px;flex:0 0 700px}
+  .main.wide{display:block}
+  .col-text{width:700px;display:flex;flex-direction:column;justify-content:center}
+  .col-figure{width:1120px;display:flex;align-items:center;justify-content:center}
+  .main.wide .col-figure{width:1880px}
+  .col-figure svg{display:block}
+
+  /* 论点条目：图标取代序号 */
+  .pt{margin-bottom:40px}
+  .pt:last-child{margin-bottom:0}
+  .pt .row{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+  .pt .ico{width:44px;height:44px;flex:0 0 44px;color:#006393}
+  .pt h3{font-size:25px;font-weight:700;color:#333333;line-height:1.25}
+  .pt p{font-size:20px;color:#777777;line-height:1.7;padding-left:62px}
+  .pt code{font-family:Consolas,"Courier New",monospace;font-size:18px;color:#333333;background:#F5F5F5;padding:0 4px}
+
+  .notes{font-size:20px;color:#777777;line-height:1.7}
+  /* 页脚：绝对定位的包含块是 .slide 的 padding box（1920×1080），故 left/bottom 各留 20px 边距 */
+  .footer{position:absolute;left:20px;bottom:22px;width:1880px;display:flex;justify-content:space-between;
+    font-size:14px;color:#A3A3A3}
+
+  /* 封面（自定义骨架，底部关键数字行参照 A·17 大数字指标条口径） */
+  .cover{display:flex;flex-direction:column;justify-content:center;height:885px}
+  .cover .mark{width:80px;height:6px;background:#CC0000}
+  .cover .lead{margin-top:44px;font-size:40px;font-weight:700;color:#333333;line-height:1.35;max-width:1500px}
+  .cover .sub{margin-top:26px;font-size:22px;color:#777777;line-height:1.7;max-width:1500px}
+  .cover .kpi{display:flex;gap:26px;margin-top:74px;border-top:1px solid #E5E5E5;padding-top:38px}
+  .cover .kpi div{flex:1 1 0}
+  .cover .kpi b{display:block;font-size:60px;font-weight:700;color:#333333;line-height:1}
+  .cover .kpi span{display:block;margin-top:14px;font-size:22px;font-weight:700;color:#006393}
+  .cover .kpi i{display:block;margin-top:8px;font-size:18px;font-style:normal;color:#A3A3A3}
+
+  .echart{width:1120px;height:700px}
+  .echart.wide{width:1880px}
+
+  /* 导航：圆点跳转 + 页码 + 前后翻页 */
+  #nav{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;
+    gap:12px;background:rgba(255,255,255,.96);border:1px solid #DDDDDD;border-radius:999px;
+    padding:7px 16px;font-size:13px;color:#666666;z-index:99;white-space:nowrap;
+    opacity:0;transition:opacity .25s ease;pointer-events:none}
+  #nav.show{opacity:1;pointer-events:auto}
+  #nav button{border:1px solid #DDDDDD;background:#FFF;border-radius:6px;width:28px;height:24px;
+    cursor:pointer;color:#666;font-size:14px;line-height:1}
+  #nav button:hover{border-color:#CC0000;color:#CC0000}
+  .dot{width:8px;height:8px;border-radius:50%;background:#CCCCCC;display:inline-block;margin:0 3px;cursor:pointer}
+  .dot.on{background:#CC0000}
+  @media print{#nav{display:none !important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><symbol id="i-target" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="8"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></symbol><symbol id="i-bulb" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 8a11 11 0 0 1 6 20v4H18v-4A11 11 0 0 1 24 8z"/><path d="M20 36h8"/><path d="M22 41h4"/></symbol><symbol id="i-clock" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="16"/><path d="M24 24V13"/><path d="M24 24l9 5"/></symbol><symbol id="i-code" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 15 7 24l10 9"/><path d="M31 15l10 9-10 9"/><path d="M27 12l-6 24"/></symbol><symbol id="i-loop" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 24a12 12 0 0 1 20-9"/><path d="M33 9v8h-8"/><path d="M36 24a12 12 0 0 1-20 9"/><path d="M15 39v-8h8"/></symbol><symbol id="i-grid" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="15" height="15"/><rect x="26" y="7" width="15" height="15"/><rect x="7" y="26" width="15" height="15"/><rect x="26" y="26" width="15" height="15"/></symbol><symbol id="i-check" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="16"/><path d="M16 25l6 6 11-13"/></symbol><symbol id="i-node" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="10" r="5"/><circle cx="10" cy="35" r="5"/><circle cx="38" cy="35" r="5"/><path d="M21 14l-8 16"/><path d="M27 14l8 16"/><path d="M15 35h18"/></symbol><symbol id="i-chart" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 36l11-12 8 6 15-18"/><path d="M31 12h10v10"/><path d="M7 41h34"/></symbol><symbol id="i-scale" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 8v30"/><path d="M8 15h32"/><path d="M8 15 2 27h12z"/><path d="M40 15 34 27h12z"/><path d="M16 41h16"/></symbol><symbol id="i-search" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="21" cy="21" r="12"/><path d="M30 30l11 11"/></symbol><symbol id="i-doc" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h17l9 9v29H11z"/><path d="M28 5v9h9"/><path d="M17 24h14"/><path d="M17 32h14"/></symbol><symbol id="i-shield" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 5l15 6v13c0 9-6 15-15 19-9-4-15-10-15-19V11z"/><path d="M17 24l5 5 10-11"/></symbol><symbol id="i-people" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="15" r="7"/><path d="M10 41c0-8 6-13 14-13s14 5 14 13"/></symbol><symbol id="i-step" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="31" width="12" height="11"/><rect x="18" y="21" width="12" height="21"/><rect x="30" y="11" width="12" height="31"/></symbol><symbol id="i-flag" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v38"/><path d="M12 8h22l-5 8 5 8H12z"/></symbol><symbol id="i-db" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="24" cy="12" rx="14" ry="6"/><path d="M10 12v24c0 3 6 6 14 6s14-3 14-6V12"/><path d="M10 24c0 3 6 6 14 6s14-3 14-6"/></symbol><symbol id="i-warn" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 7l17 30H7z"/><path d="M24 18v11"/><path d="M24 33v.5"/></symbol><symbol id="i-book" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 13C21 9 15 8 6 8v27c9 0 15 1 18 5 3-4 9-5 18-5V8c-9 0-15 1-18 5z"/><path d="M24 13v27"/></symbol><symbol id="i-flame" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 6c6 8 12 12 12 21a12 12 0 0 1-24 0c0-9 6-13 12-21z"/><path d="M24 27c3 4 4 5 4 8a4 4 0 0 1-8 0c0-3 1-4 4-8z"/></symbol><symbol id="i-eye" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 24s8-13 20-13 20 13 20 13-8 13-20 13S4 24 4 24z"/><circle cx="24" cy="24" r="6"/></symbol><symbol id="i-compass" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="17"/><polygon points="32,16 19,20 16,32 29,28"/></symbol><symbol id="i-tree" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="20" y="5" width="8" height="7"/><rect x="4" y="34" width="9" height="7"/><rect x="20" y="34" width="9" height="7"/><rect x="35" y="34" width="9" height="7"/><path d="M24 12v10"/><path d="M8.5 34v-8h31v8"/><path d="M24.5 26v8"/></symbol><symbol id="i-globe" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="17"/><path d="M7 24h34"/><path d="M24 7c5 6 7 11 7 17s-2 11-7 17c-5-6-7-11-7-17s2-11 7-17z"/></symbol><symbol id="i-lang" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11h19"/><path d="M15 7v4"/><path d="M20 11c0 9-7 18-15 21"/><path d="M11 17c2 6 7 11 13 14"/><path d="M26 42l8-21 8 21"/><path d="M29 35h10"/></symbol><symbol id="i-brain" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 8c-7 0-10 4-10 8-4 2-6 5-6 9s2 7 6 9c0 4 3 8 10 8V8z"/><path d="M26 8c7 0 10 4 10 8 4 2 6 5 6 9s-2 7-6 9c0 4-3 8-10 8V8z"/><path d="M12 20h6"/><path d="M30 27h6"/></symbol><symbol id="i-key" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="24" r="9"/><path d="M23 24h21"/><path d="M36 24v7"/><path d="M43 24v5"/></symbol><symbol id="i-crown" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 36 5 14l10 8 9-14 9 14 10-8-2 22z"/><path d="M7 41h34"/></symbol><symbol id="i-law" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 9v30"/><path d="M9 16h30"/><path d="M9 16 3 28h12z"/><path d="M39 16 33 28h12z"/><path d="M16 41h16"/></symbol><symbol id="i-pyramid" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 7 45 42H3z"/><path d="M24 7 24 42"/><path d="M14 29h20"/></symbol><symbol id="i-split" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 6v13"/><path d="M24 19 10 33v9"/><path d="M24 19l14 14v9"/></symbol><symbol id="i-wave" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 30c6-10 10-10 16 0s10 10 16 0 8-6 8-6"/><path d="M4 40c6-8 10-8 16 0"/></symbol><symbol id="i-church" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 5v34"/><path d="M14 17h20"/><path d="M9 41V27l15-9 15 9v14z"/></symbol><symbol id="i-thought" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 30a10 10 0 0 1 2-19c2-4 7-6 12-4 5-2 10 0 12 4a10 10 0 0 1 2 19z"/><path d="M17 30h14"/><circle cx="17" cy="38" r="2.6"/><circle cx="25" cy="42" r="1.8"/></symbol><symbol id="i-infinity" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 24c0-5 3-8 7-8 6 0 7 16 13 16 4 0 7-3 7-8s-3-8-7-8c-6 0-7 16-13 16-4 0-7-3-7-8z"/></symbol></defs></svg>
+<div id="viewport"><div id="stage">
+
+<!-- ================================================================
+     P01 · 封面（规范未提供模板；采用硬骨架 1920×1080 + 四边 20px + y=170 5px 黑线拉通）
+     红色只出现一次：80×6 红色短线；关键数字走 #333333 / #006393，不占用红色名额
+     ================================================================ -->
+<section class="slide on">
+  <header class="title-zone">
+    <h1>QVSU OpenAPI 管理与网关服务 · 架构逆向结论</h1>
+    <span class="kicker">SYS-qvsu-openapi · Architecture Review</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="cover">
+      <div class="mark"></div>
+      <p class="lead">一个单体进程，同时扮演后台管理平台与开放网关两个角色</p>
+      <p class="sub">Spring Boot 2.7.18 单体 · MyBatis + Apache Shiro 1.13.0 · PostgreSQL 11 · Thymeleaf 服务端渲染 · 端口 <code>5656</code><br>
+        结论来自 <code>docs/meta-model/</code> 全量逆向元模型（25 份，官方校验器 PASS / ERROR=0）</p>
+      <div class="kpi">
+        <div><b>6</b><span>个模块</span><i>265 个 Java 类</i></div>
+        <div><b>24</b><span>个 Controller</span><i>184 个 HTTP 端点</i></div>
+        <div><b>34</b><span>张物理表</span><i>342 个字段 / 5 个簇</i></div>
+        <div><b>32</b><span>个功能</span><i>4 域 / 18 能力 / 9 场景</i></div>
+        <div><b>55</b><span>个权限码</span><i>149 行菜单数据</i></div>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：docs/meta-model/technical-architecture.md、module-index.md、functional-inventory.md、PROGRESS.md</span><span>01 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P02 · 三形态判定：有层级/归属结构，无数值序列比较 → 图形页
+     模板：库 A · 14 中心辐射（Hub &amp; Spoke）· 规格 右栏 1120×700（本页按 984×700 投放，包围盒上下左右居中）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>一个单体进程收敛全部职责：后台管理 + 开放网关同进程</h1>
+    <span class="kicker">Section 01 · Context</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-globe"/></svg>
+            <h3>一个 jar，两个对外身份</h3>
+          </div>
+          <p>既是服务端渲染的后台管理平台（Thymeleaf 144 个模板），<br>也是面向第三方的 OpenAPI 网关（<code>/open/**</code> 统一转发）</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-people"/></svg>
+            <h3>两类使用者，两套凭据体系</h3>
+          </div>
+          <p>浏览器用户走 Shiro 服务端会话（30 分钟超时）；第三方调用方走<br><code>X-App-Key</code> + <code>HmacSHA256</code> 签名，不建立任何会话</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg>
+            <h3>网关不共用安全框架</h3>
+          </div>
+          <p><code>/open/**</code> 与 <code>/selftest/**</code> 在 <code>ShiroConfig</code> 中显式配置为<br><code>anon</code>，由 <code>OpenApiFilter</code> 自行完成签名鉴权</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-db"/></svg>
+            <h3>存储只有 PostgreSQL 11 一个实例</h3>
+          </div>
+          <p>34 张表：<code>open_*</code> 5 张 + <code>sys_*</code>/<code>gen_*</code> + <code>QRTZ_*</code> 11 张；<br>无视图、无存储过程、无物理外键</p>
+        </div>
+      </div>
+      <div class="col-figure">
+        <svg width="984" height="700" viewBox="0 0 900 640" xmlns="http://www.w3.org/2000/svg">
+          <!-- 连线：上排接下边中点、下排接上边中点 -->
+          <line x1="450" y1="248" x2="450" y2="124" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="387.4" y1="284.4" x2="200" y2="178" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="512.6" y1="284.4" x2="700" y2="178" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="450" y1="392" x2="450" y2="488" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="384.5" y1="349.9" x2="200" y2="434" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="515.5" y1="349.9" x2="700" y2="434" stroke="#CCCCCC" stroke-width="2"/>
+
+          <!-- 中心：唯一一处红色 -->
+          <circle cx="450" cy="320" r="72" fill="#CC0000"/>
+          <text x="450" y="312" text-anchor="middle" font-size="19" font-weight="700" fill="#FFFFFF">QVSU OpenAPI</text>
+          <text x="450" y="336" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">单体 :5656</text>
+          <text x="450" y="358" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.85">SYS-qvsu-openapi</text>
+
+          <!-- 上排要素 -->
+          <rect x="120" y="122" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="200" y="148" text-anchor="middle" font-size="15" fill="#333333">后台管理员</text>
+          <text x="200" y="168" text-anchor="middle" font-size="13" fill="#A3A3A3">Thymeleaf 144 模板</text>
+          <circle cx="200" cy="178" r="3.5" fill="#A3A3A3"/>
+
+          <rect x="370" y="68" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="450" y="94" text-anchor="middle" font-size="15" fill="#333333">第三方调用方</text>
+          <text x="450" y="114" text-anchor="middle" font-size="13" fill="#A3A3A3">X-App-Key / X-Sign</text>
+          <circle cx="450" cy="124" r="3.5" fill="#A3A3A3"/>
+
+          <rect x="620" y="122" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="700" y="148" text-anchor="middle" font-size="15" fill="#333333">外部上游服务</text>
+          <text x="700" y="168" text-anchor="middle" font-size="13" fill="#A3A3A3">RestTemplate 转发</text>
+          <circle cx="700" cy="178" r="3.5" fill="#A3A3A3"/>
+
+          <!-- 下排要素 -->
+          <rect x="120" y="434" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="200" y="460" text-anchor="middle" font-size="15" fill="#333333">Shiro 1.13.0</text>
+          <text x="200" y="480" text-anchor="middle" font-size="13" fill="#A3A3A3">会话 + 权限注解</text>
+          <circle cx="200" cy="434" r="3.5" fill="#A3A3A3"/>
+
+          <rect x="370" y="488" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="450" y="514" text-anchor="middle" font-size="15" fill="#333333">双轨数据访问</text>
+          <text x="450" y="534" text-anchor="middle" font-size="13" fill="#A3A3A3">MyBatis + JdbcTemplate</text>
+          <circle cx="450" cy="488" r="3.5" fill="#A3A3A3"/>
+
+          <rect x="620" y="434" width="160" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="700" y="460" text-anchor="middle" font-size="15" fill="#333333">PostgreSQL 11</text>
+          <text x="700" y="480" text-anchor="middle" font-size="13" fill="#A3A3A3">34 张表 / 342 字段</text>
+          <circle cx="700" cy="434" r="3.5" fill="#A3A3A3"/>
+
+          <text x="450" y="616" text-anchor="middle" font-size="13" fill="#A3A3A3">中心 = 单体进程；外圈 6 个使用者与依赖要素，上下两排对称分布</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §部署形态、§OpenAPI 网关链路；module-index.md §5.2 实际依赖方向</span><span>02 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P03 · 三形态判定：有层级/递进结构 → 图形页
+     模板：库 A · 15 阶梯递进（五级台阶）· 通栏 1880×700（本页按 1880×674 投放）
+     说明：模板右上角原有红色注释文字改为 #A3A3A3，以保持「全页只有一处红」（红落在第 05 级）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>五层栈自下而上支撑，交互层是唯一面向用户的面</h1>
+    <span class="kicker">Section 02 · Layering</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 674px">
+      <div class="col-figure">
+        <svg width="1880" height="674" viewBox="0 0 1200 430" xmlns="http://www.w3.org/2000/svg">
+          <line x1="36" y1="360" x2="36" y2="36" stroke="#CCCCCC" stroke-width="2"/>
+          <polygon points="30,44 36,30 42,44" fill="#CCCCCC"/>
+          <text x="20" y="200" text-anchor="middle" font-size="13" fill="#A3A3A3"
+                transform="rotate(-90 20 200)">层级 / 依赖方向</text>
+
+          <rect x="60" y="240" width="200" height="120" fill="#CCCCCC"/>
+          <text x="160" y="280" text-anchor="middle" font-size="14" font-weight="700" fill="#333333">01</text>
+          <text x="160" y="312" text-anchor="middle" font-size="17" font-weight="700" fill="#333333">存储层</text>
+          <text x="160" y="340" text-anchor="middle" font-size="13" fill="#555555">PostgreSQL 11</text>
+
+          <rect x="280" y="190" width="200" height="170" fill="#A3A3A3"/>
+          <text x="380" y="230" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">02</text>
+          <text x="380" y="262" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">数据层</text>
+          <text x="380" y="290" text-anchor="middle" font-size="13" fill="#FFFFFF">144 条 Mapper 语句</text>
+
+          <rect x="500" y="140" width="200" height="220" fill="#006393"/>
+          <text x="600" y="180" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">03</text>
+          <text x="600" y="212" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">业务层</text>
+          <text x="600" y="240" text-anchor="middle" font-size="13" fill="#FFFFFF">26 个 SVC 服务接口</text>
+
+          <rect x="720" y="90" width="200" height="270" fill="#333333"/>
+          <text x="820" y="130" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">04</text>
+          <text x="820" y="162" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">入口层</text>
+          <text x="820" y="190" text-anchor="middle" font-size="13" fill="#FFFFFF">24 Controller / 184 端点</text>
+
+          <rect x="940" y="40" width="200" height="320" fill="#CC0000"/>
+          <text x="1040" y="80" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">05</text>
+          <text x="1040" y="112" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">交互层</text>
+          <text x="1040" y="140" text-anchor="middle" font-size="13" fill="#FFFFFF">144 个 Thymeleaf 模板</text>
+
+          <line x1="60" y1="360" x2="1140" y2="360" stroke="#A3A3A3" stroke-width="2"/>
+          <line x1="160" y1="360" x2="160" y2="374" stroke="#A3A3A3" stroke-width="1.5"/>
+          <line x1="380" y1="360" x2="380" y2="374" stroke="#A3A3A3" stroke-width="1.5"/>
+          <line x1="600" y1="360" x2="600" y2="374" stroke="#A3A3A3" stroke-width="1.5"/>
+          <line x1="820" y1="360" x2="820" y2="374" stroke="#A3A3A3" stroke-width="1.5"/>
+          <line x1="1040" y1="360" x2="1040" y2="374" stroke="#A3A3A3" stroke-width="1.5"/>
+          <text x="160" y="398" text-anchor="middle" font-size="13" fill="#A3A3A3">表结构</text>
+          <text x="380" y="398" text-anchor="middle" font-size="13" fill="#A3A3A3">SQL 语句</text>
+          <text x="600" y="398" text-anchor="middle" font-size="13" fill="#A3A3A3">服务契约</text>
+          <text x="820" y="398" text-anchor="middle" font-size="13" fill="#A3A3A3">HTTP 契约</text>
+          <text x="1040" y="398" text-anchor="middle" font-size="13" fill="#A3A3A3">页面渲染</text>
+
+          <text x="1140" y="34" text-anchor="end" font-size="13" fill="#A3A3A3">自下而上支撑 →</text>
+        </svg>
+      </div>
+    </div>
+    <div class="notes">入口层 24 个 Controller 承载 184 个端点，其中 21 个继承公共基类 <code>BaseController</code><br>
+      数据层同时存在 MyBatis Mapper（144 条语句）与 JdbcTemplate 裸 SQL（网关侧）两条访问路径</div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §分层架构、§事务边界；module-index.md §2 模块总览</span><span>03 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P04 · 三形态判定：有数值序列（6 个模块类数）需要排名比较 → 数据页
+     模板：库 B · 09 横向条形排名 · 容器 1120×700（= 图表尺寸）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>基座模块 common 独占 113 个类（43%），是全仓的公共耦合点</h1>
+    <span class="kicker">Section 03 · Modules</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-grid"/></svg>
+            <h3>6 个模块、265 个类</h3>
+          </div>
+          <p>common 113 · system 50 · framework 46 · open 22<br>quartz 19 · web 15；<code>src/main/java</code> 共 265 个类</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-node"/></svg>
+            <h3>实测依赖只有三层</h3>
+          </div>
+          <p>web → framework / system / quartz / open → common<br><code>MOD-common</code> 出向 import 为 0，无循环依赖</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-split"/></svg>
+            <h3>一处分层倒置 + 一处跨层直连</h3>
+          </div>
+          <p><code>framework → system</code> 21 处 import（<code>UserRealm</code> 等）<br><code>AsyncFactory</code> 直接引用实现类，绕过接口</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key"/></svg>
+            <h3>网关模块与安全框架零耦合</h3>
+          </div>
+          <p><code>MOD-open</code> 对 <code>framework</code> 的 import 数为 0：<br>签名鉴权全部自实现，不复用 <code>ShiroConfig</code> 与 <code>UserRealm</code></p>
+        </div>
+      </div>
+      <div class="col-figure"><div class="echart" id="ch4"></div></div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：module-index.md §2 模块总览、§5.1 依赖矩阵、§5.3 循环依赖与跨层直连检查</span><span>04 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P05 · 三形态判定：有阶段推进结构（部署路径收敛/淘汰）→ 图形页
+     模板：库 A · 05 发展阶段流程图 · 通栏 1880×700（本页按 1880×470 投放）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>四条部署路径里，dev-docker 是唯一不可复现的一条</h1>
+    <span class="kicker">Section 04 · Deployment</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 470px">
+      <div class="col-figure">
+        <svg width="1880" height="470" viewBox="0 0 1200 300" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="mk-stage" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#A3A3A3"/>
+            </marker>
+          </defs>
+
+          <!-- 阶段一：唯一一处红色（落点：不可复现，应清理） -->
+          <rect x="40" y="80" width="240" height="140" fill="#CC0000"/>
+          <circle cx="160" cy="128" r="24" fill="#FFFFFF" fill-opacity="0.22"/>
+          <text x="160" y="135" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">01</text>
+          <text x="160" y="184" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">dev-docker 镜像</text>
+          <text x="160" y="208" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.9">外部固定 tag，上下文缺失</text>
+
+          <line x1="290" y1="150" x2="318" y2="150" stroke="#A3A3A3" stroke-width="2" marker-end="url(#mk-stage)"/>
+
+          <rect x="320" y="80" width="240" height="140" fill="#006393"/>
+          <circle cx="440" cy="128" r="24" fill="#FFFFFF" fill-opacity="0.22"/>
+          <text x="440" y="135" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">02</text>
+          <text x="440" y="184" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">本地源码直跑</text>
+          <text x="440" y="208" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.9">mvn package + java -jar</text>
+
+          <line x1="570" y1="150" x2="598" y2="150" stroke="#A3A3A3" stroke-width="2" marker-end="url(#mk-stage)"/>
+
+          <rect x="600" y="80" width="240" height="140" fill="#333333"/>
+          <circle cx="720" cy="128" r="24" fill="#FFFFFF" fill-opacity="0.22"/>
+          <text x="720" y="135" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">03</text>
+          <text x="720" y="184" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">local-docker 全栈</text>
+          <text x="720" y="208" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.9">应用 + PostgreSQL 11</text>
+
+          <line x1="850" y1="150" x2="878" y2="150" stroke="#A3A3A3" stroke-width="2" marker-end="url(#mk-stage)"/>
+
+          <rect x="880" y="80" width="240" height="140" fill="#A3A3A3"/>
+          <circle cx="1000" cy="128" r="24" fill="#FFFFFF" fill-opacity="0.22"/>
+          <text x="1000" y="135" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">04</text>
+          <text x="1000" y="184" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">生产升级脚本</text>
+          <text x="1000" y="208" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.9">7 个 SQL 手工按序执行</text>
+
+          <line x1="40" y1="262" x2="1160" y2="262" stroke="#CCCCCC" stroke-width="2"/>
+          <text x="160" y="288" text-anchor="middle" font-size="13" fill="#A3A3A3">不可复现</text>
+          <text x="440" y="288" text-anchor="middle" font-size="13" fill="#A3A3A3">可复现</text>
+          <text x="720" y="288" text-anchor="middle" font-size="13" fill="#A3A3A3">可复现</text>
+          <text x="1000" y="288" text-anchor="middle" font-size="13" fill="#A3A3A3">手工执行</text>
+        </svg>
+      </div>
+    </div>
+    <div class="notes">local-docker：Maven 3.9.9 + Temurin 8 JRE 多阶段构建，compose 一条命令起全栈<br>
+      Dockerfile 写 <code>EXPOSE 80</code>、实际端口 5656；MySQL 初始化脚本无对应服务，属死代码</div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §部署形态、技术债第 5/6/7 条</span><span>05 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P06 · 三形态判定：有逐层收敛结构（过滤器链筛选）→ 图形页
+     模板：库 A · 08 漏斗模型 · 右栏 1120×700（本页按 875×700 投放）
+     说明：4 层配色改为「第 4 层（落点）走红」，其余按灰→深青→蓝，保持「红=落点」的配色语义
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>过滤链五段齐备，但防护段默认关闭 —— POST 请求无 CSRF 校验</h1>
+    <span class="kicker">Section 05 · Security</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg>
+            <h3>兜底链五段按序执行</h3>
+          </div>
+          <p><code>/**</code> → <code>user, kickout, onlineSession, syncOnlineSession,</code><br><code>csrfValidateFilter</code>；模板由 <code>ShiroConfig</code> 装配</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key"/></svg>
+            <h3>防护段被开关关闭</h3>
+          </div>
+          <p><code>csrf.enabled=false</code>（配置与默认值都是 false），白名单<br><code>csrf.whites=/druid</code> 同步失效；页面仍下发 Token 元数据</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eye"/></svg>
+            <h3>两段过滤器实际不生效</h3>
+          </div>
+          <p><code>maxSession=-1</code> 时 <code>kickout</code> 直接放行；<code>sys-authCache</code> 永久<br>缓存且 <code>clearCachedAuthorizationInfo</code> 全仓无调用点</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-loop"/></svg>
+            <h3>另有两条专用链</h3>
+          </div>
+          <p><code>/login</code> 与 <code>/register</code> 追加 <code>captchaValidate</code>；<code>/logout</code> 走 <code>logout</code>；<br><code>XssFilter</code> 注册在 Shiro 之前，仅覆盖 <code>/system/*</code> 与 <code>/tool/*</code> 两个前缀</p>
+        </div>
+      </div>
+      <div class="col-figure">
+        <svg width="875" height="700" viewBox="0 0 700 560" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="110,40 590,40 542.5,150 157.5,150" fill="#A3A3A3"/>
+          <text x="350" y="102" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">全部 HTTP 请求</text>
+
+          <polygon points="157.5,150 542.5,150 495,260 205,260" fill="#333333"/>
+          <text x="350" y="212" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">匿名段放行：14 条路径 + @Anonymous</text>
+
+          <polygon points="205,260 495,260 447.5,370 252.5,370" fill="#006393"/>
+          <text x="350" y="312" text-anchor="middle" font-size="17" font-weight="600" fill="#FFFFFF">认证与会话四段</text>
+          <text x="350" y="336" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.85">user / kickout / online*</text>
+
+          <polygon points="252.5,370 447.5,370 400,480 300,480" fill="#CC0000"/>
+          <text x="350" y="424" text-anchor="middle" font-size="16" font-weight="600" fill="#FFFFFF">防护段 · 默认关闭</text>
+          <text x="350" y="446" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.9">csrfValidateFilter</text>
+
+          <line x1="600" y1="40" x2="640" y2="40" stroke="#CCCCCC" stroke-width="1.5"/>
+          <line x1="600" y1="480" x2="640" y2="480" stroke="#CCCCCC" stroke-width="1.5"/>
+          <line x1="632" y1="40" x2="632" y2="480" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="638" y="248" font-size="13" fill="#A3A3A3">逐层收敛</text>
+          <text x="638" y="272" font-size="13" fill="#A3A3A3">防护为 0</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §Shiro 安全链路；common-capability-index.md R-2 / R-4 / R-11</span><span>06 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P07 · 三形态判定：有占比与总量数值（184 / 105 / 79）→ 数据页
+     模板：库 B · 12 环形 + 中心 KPI · 通栏容器 1880×700（两侧补 3 行口径说明，环仍居中）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>184 个端点里 79 个没有权限码，open 域管理端点全部零注解</h1>
+    <span class="kicker">Section 05 · Permission Gap</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 700px">
+      <div class="col-figure"><div class="echart wide" id="ch7"></div></div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：PROGRESS.md §4；module-index.md §5.3；architecture.md §11 冲突-2 / 冲突-3（权限码 16 个、管理端点 36 个为源码直读口径）</span><span>07 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P08 · 三形态判定：有 MECE 拆解结构（一次调用拆三段六组件）→ 图形页
+     模板：库 A · 06 分解图 / 逻辑树 · 右栏 1120×700（本页按 1120×697 投放）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>一次网关调用拆成三段六组件：鉴权、转发、记录，缺一段即断</h1>
+    <span class="kicker">Section 06 · Gateway Chain</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key"/></svg>
+            <h3>鉴权段：签名 + 时间戳 + 防重放</h3>
+          </div>
+          <p><code>OpenApiFilter</code> 先置 <code>TraceContext</code>，再由 <code>OpenApiSecurityService</code><br>做 <code>HmacSHA256</code> 校验，时间漂移容忍 ±5 分钟</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-node"/></svg>
+            <h3>转发段：剥离签名头后转发</h3>
+          </div>
+          <p><code>OpenGatewayController</code> 接收 <code>/open/**</code>，<code>OpenApiProxyService</code><br>用 <code>RestTemplate</code> 转发到 <code>target_url</code>，超时默认 5000ms</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-db"/></svg>
+            <h3>记录段：直插日志表，不在事务内</h3>
+          </div>
+          <p><code>OpenApiLogService#save</code> 用 <code>JdbcTemplate.update</code> 写<br><code>open_call_log</code>，与鉴权查询同属裸 SQL 旁路</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>
+            <h3>错误码两段式，网关侧自处理</h3>
+          </div>
+          <p>鉴权 40001–40005、转发 50001–50002；网关异常在 Filter 内被<br>捕获，不进入 <code>GlobalExceptionHandler</code> 的 8 个处理器</p>
+        </div>
+      </div>
+      <div class="col-figure">
+        <svg width="1120" height="697" viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg">
+          <!-- 根节点：唯一一处红色 -->
+          <rect x="330" y="30" width="240" height="70" fill="#CC0000"/>
+          <text x="450" y="72" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">一次网关调用</text>
+
+          <line x1="450" y1="100" x2="450" y2="150" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="150" y1="150" x2="750" y2="150" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="150" y1="150" x2="150" y2="200" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="450" y1="150" x2="450" y2="200" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="750" y1="150" x2="750" y2="200" stroke="#CCCCCC" stroke-width="2"/>
+
+          <rect x="40" y="200" width="220" height="70" fill="#006393"/>
+          <text x="150" y="234" text-anchor="middle" font-size="16" font-weight="600" fill="#FFFFFF">鉴权段</text>
+          <text x="150" y="256" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.85">OpenApiFilter / Security</text>
+
+          <rect x="340" y="200" width="220" height="70" fill="#006393"/>
+          <text x="450" y="234" text-anchor="middle" font-size="16" font-weight="600" fill="#FFFFFF">转发段</text>
+          <text x="450" y="256" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.85">Gateway / Proxy</text>
+
+          <rect x="640" y="200" width="220" height="70" fill="#006393"/>
+          <text x="750" y="234" text-anchor="middle" font-size="16" font-weight="600" fill="#FFFFFF">记录段</text>
+          <text x="750" y="256" text-anchor="middle" font-size="13" fill="#FFFFFF" fill-opacity="0.85">LogService / Trace</text>
+
+          <line x1="150" y1="270" x2="150" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="102" y1="310" x2="198" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="102" y1="310" x2="102" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="198" y1="310" x2="198" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <rect x="58" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="102" y="380" text-anchor="middle" font-size="13" fill="#333333">过滤器</text>
+          <rect x="154" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="198" y="380" text-anchor="middle" font-size="13" fill="#333333">签名服务</text>
+
+          <line x1="450" y1="270" x2="450" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="402" y1="310" x2="498" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="402" y1="310" x2="402" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="498" y1="310" x2="498" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <rect x="358" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="402" y="380" text-anchor="middle" font-size="13" fill="#333333">路由控制</text>
+          <rect x="454" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="498" y="380" text-anchor="middle" font-size="13" fill="#333333">转发服务</text>
+
+          <line x1="750" y1="270" x2="750" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="702" y1="310" x2="798" y2="310" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="702" y1="310" x2="702" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="798" y1="310" x2="798" y2="345" stroke="#CCCCCC" stroke-width="2"/>
+          <rect x="658" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="702" y="380" text-anchor="middle" font-size="13" fill="#333333">日志服务</text>
+          <rect x="754" y="345" width="88" height="56" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="798" y="380" text-anchor="middle" font-size="13" fill="#333333">trace</text>
+
+          <line x1="40" y1="470" x2="860" y2="470" stroke="#CCCCCC" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="450" y="504" text-anchor="middle" font-size="14" fill="#A3A3A3">
+            三段共 6 个组件，遵循 MECE：链路无跨层跳跃，缺任一段调用不可达
+          </text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §OpenAPI 网关链路、§全局异常处理、§事务边界</span><span>08 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P09 · 三形态判定：有构成与数量（34 张表按 5 簇分布）→ 数据页
+     模板：库 B · 14 矩形树图（单层平铺 + 同族同色 + 底部色例）· 通栏容器 1880×700
+     说明：底部色例由 3 项扩为 5 项并按 1880 宽重新分布；颜色全部写在节点 itemStyle.color（levels 内不写颜色）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>34 张表分 5 簇，Quartz 簇 13 张里有 11 张运行期从不读写</h1>
+    <span class="kicker">Section 07 · Data</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 700px">
+      <div class="col-figure"><div class="echart wide" id="ch9"></div></div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：database-relations.md §4 关系分簇；database-model.md 34 张表 / 342 个字段；common-capability-index.md R-12</span><span>09 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P10 · 三形态判定：有层级/归属结构（4 域 → 18 能力 → 32 功能）→ 图形页
+     模板：库 A · 03 金字塔模型 · 右栏 1120×700（本页按 875×700 投放）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>四层业务模型：7 个对外能力架在 19 个平台管理功能之上</h1>
+    <span class="kicker">Section 08 · Business Model</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pyramid"/></svg>
+            <h3>4 个业务域、18 个能力</h3>
+          </div>
+          <p>开放平台域 7 · 系统管理域 4 · 平台公共域 4 · 调度任务域 3<br>域之间零依赖，能力分组只作导航，功能逐个建卡</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chart"/></svg>
+            <h3>32 个功能，两种触发方式</h3>
+          </div>
+          <p>menu 触发 21 个 · api-only 9 个 · startup-lifecycle 1 个 ·<br>scheduled 1 个；源码中注解式 Job/Event 触发器数量为 0</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-people"/></svg>
+            <h3>9 个场景 + 16 个页面菜单</h3>
+          </div>
+          <p>菜单原始 149 行（含方言重复），去重后 16 个页面/目录菜单 +<br>50 个按钮权限；每个功能都有需求面板与实现主链，一一对应率 100%</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key"/></svg>
+            <h3>开放平台域是唯一的业务增量</h3>
+          </div>
+          <p>7 个功能全部落在 <code>com.qvsu.open</code>（22 个类），其余 25 个功能<br>属于 RuoYi 精简基座自带能力</p>
+        </div>
+      </div>
+      <div class="col-figure">
+        <svg width="875" height="700" viewBox="0 0 700 560" xmlns="http://www.w3.org/2000/svg">
+          <!-- 第 1 层：唯一一处红色 -->
+          <polygon points="300,60 400,60 442.5,170 257.5,170" fill="#CC0000"/>
+          <text x="350" y="122" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">开放平台域</text>
+
+          <polygon points="257.5,170 442.5,170 485,280 215,280" fill="#006393"/>
+          <text x="350" y="232" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">系统管理域</text>
+
+          <polygon points="215,280 485,280 527.5,390 172.5,390" fill="#333333"/>
+          <text x="350" y="342" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">调度与公共域</text>
+
+          <polygon points="172.5,390 527.5,390 570,500 130,500" fill="#A3A3A3"/>
+          <text x="350" y="452" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">单体运行基座</text>
+
+          <line x1="556" y1="115" x2="590" y2="115" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="600" y="120" font-size="13" fill="#A3A3A3">7 能力 / 7 功能</text>
+
+          <line x1="556" y1="225" x2="590" y2="225" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="600" y="230" font-size="13" fill="#A3A3A3">4 能力 / 19 功能</text>
+
+          <line x1="556" y1="335" x2="590" y2="335" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="600" y="340" font-size="13" fill="#A3A3A3">7 能力 / 6 功能</text>
+
+          <line x1="556" y1="445" x2="590" y2="445" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="600" y="450" font-size="13" fill="#A3A3A3">6 模块 / 34 表</text>
+
+          <line x1="80" y1="500" x2="80" y2="80" stroke="#CCCCCC" stroke-width="2"/>
+          <polygon points="74,84 80,70 86,84" fill="#CCCCCC"/>
+          <text x="66" y="290" text-anchor="middle" font-size="13" fill="#A3A3A3"
+                transform="rotate(-90 66 290)">自上而下归属 → 自下而上支撑</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：business-architecture.md §2–§5；functional-inventory.md 末尾统计表；module-index.md §3</span><span>10 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P11 · 三形态判定：有完成率/对账口径（8 类资产覆盖率）→ 数据页
+     模板：库 B · 26 进度条组 · 通栏容器 1880×700
+     说明：红色只给唯一未满 100% 的「源码文件」；模板原红色 markLine 改为 #333333（保持红=落点）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>8 类核心资产有 7 类对账覆盖 100%，缺口只在源码文件层</h1>
+    <span class="kicker">Section 09 · Coverage</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 700px">
+      <div class="col-figure"><div class="echart wide" id="ch11"></div></div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：PROGRESS.md §2 资产发现与建模统计；source-coverage-report.md §1 按资产类型的覆盖统计</span><span>11 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P12 · 三形态判定：有对比权衡结构（设计强度 vs 实际强度）→ 图形页
+     模板：库 A · 19 天平权衡图 · 右栏 1120×700（本页按 1120×585 投放）
+     说明：红色托盘框改落在右侧「实际失效」一端（保持红=落点语义），结论条保持 #F5F5F5 深色字
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>防护件齐全但开关停在关闭位：设计强度不等于实际强度</h1>
+    <span class="kicker">Section 10 · Trade-off</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main">
+      <div class="col-text">
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg>
+            <h3>设计侧：机制一件不缺</h3>
+          </div>
+          <p>兜底链五段齐备、<code>CsrfValidateFilter</code> 已实现并挂在链上、<br><code>XssFilter</code> 已注册、口令重试 5 次锁定 10 分钟</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-key"/></svg>
+            <h3>实际侧：四个开关停在反向</h3>
+          </div>
+          <p><code>csrf.enabled=false</code>、<code>maxSession=-1</code>、数据库与 Druid<br>监控台口令 123456、<code>sys-authCache</code> 永久缓存且无失效调用</p>
+        </div>
+        <div class="pt">
+          <div class="row">
+            <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>
+            <h3>缺口侧：权限码没有闭环</h3>
+          </div>
+          <p>184 个端点中 79 个无 <code>@RequiresPermissions</code>；<code>open:*</code> 共 16 个<br>权限码只存在于菜单数据，后端零强制</p>
+        </div>
+      </div>
+      <div class="col-figure">
+        <svg width="1120" height="585" viewBox="0 0 900 470" xmlns="http://www.w3.org/2000/svg">
+          <rect x="60" y="40" width="340" height="60" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="230" y="78" text-anchor="middle" font-size="17" font-weight="700" fill="#333333">设计强度：已实现的防护</text>
+          <rect x="500" y="40" width="340" height="60" fill="#FFF2F2" stroke="#CC0000" stroke-width="1.5"/>
+          <text x="670" y="78" text-anchor="middle" font-size="17" font-weight="700" fill="#CC0000">实际强度：失效的开关</text>
+
+          <line x1="120" y1="200" x2="780" y2="200" stroke="#333333" stroke-width="8"/>
+
+          <polygon points="450,208 390,320 510,320" fill="#333333"/>
+          <line x1="350" y1="322" x2="550" y2="322" stroke="#333333" stroke-width="3"/>
+
+          <line x1="180" y1="200" x2="180" y2="300" stroke="#A3A3A3" stroke-width="2"/>
+          <polygon points="120,300 240,300 220,340 140,340" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="180" y="326" text-anchor="middle" font-size="16" font-weight="700" fill="#333333">4 项</text>
+
+          <line x1="720" y1="200" x2="720" y2="300" stroke="#A3A3A3" stroke-width="2"/>
+          <polygon points="660,300 780,300 760,340 680,340" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1.5"/>
+          <text x="720" y="326" text-anchor="middle" font-size="16" font-weight="700" fill="#333333">6 项</text>
+
+          <rect x="60" y="376" width="780" height="60" fill="#F5F5F5"/>
+          <text x="450" y="414" text-anchor="middle" font-size="16" font-weight="600" fill="#333333">结论：先开开关（CSRF / maxSession / 口令），再补 79 个端点的权限码</text>
+
+          <text x="450" y="460" text-anchor="middle" font-size="13" fill="#A3A3A3">两端条目同维度：均为「防护机制是否真正生效」层面的开关状态</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §Shiro 安全链路、技术债第 8/9/12 条；common-capability-index.md R-2 / R-3 / R-4</span><span>12 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P13 · 三形态判定：无层级/流程/因果，只有「三类并列缺口 + 各自条目」→ 文本分类页
+     模板：库 A · 27 分类 + 底部结论带 · 通栏 1880×700（已删图底说明行，viewBox 收至 0 0 1200 404 → 1880×633）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>三类缺口可收成两件事：先补权限码，再清凭据与开关</h1>
+    <span class="kicker">Section 11 · Risks &amp; Next</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 633px">
+      <div class="col-figure">
+        <svg width="1880" height="633" viewBox="0 0 1200 404" xmlns="http://www.w3.org/2000/svg">
+          <!-- ── 类目一：安全与权限缺口 ── -->
+          <rect x="0" y="0" width="374" height="56" fill="#333333"/>
+          <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M29,17 H 41 L 45,21 V 39 H 29 Z"/><polyline points="41,17 41,21 45,21"/>
+          </g>
+          <text x="56" y="35" font-size="18" font-weight="700" fill="#FFFFFF">安全与权限缺口</text>
+          <text x="358" y="35" text-anchor="end" font-size="13" fill="#FFFFFF" fill-opacity="0.85">15 条</text>
+          <rect x="0" y="56" width="374" height="236" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1.5"/>
+          <line x1="24" y1="84" x2="38" y2="84" stroke="#333333" stroke-width="2.5"/>
+          <text x="50" y="90" font-size="15" fill="#333333">open:* 16 个权限码零强制</text>
+          <line x1="18" y1="112" x2="356" y2="112" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="24" y1="140" x2="38" y2="140" stroke="#333333" stroke-width="2.5"/>
+          <text x="50" y="146" font-size="15" fill="#333333">79 / 184 端点无权限码</text>
+          <line x1="18" y1="168" x2="356" y2="168" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="24" y1="196" x2="38" y2="196" stroke="#333333" stroke-width="2.5"/>
+          <text x="50" y="202" font-size="15" fill="#333333">CSRF 关闭：88 个 POST 裸奔</text>
+          <line x1="18" y1="224" x2="356" y2="224" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="24" y1="252" x2="38" y2="252" stroke="#333333" stroke-width="2.5"/>
+          <text x="50" y="258" font-size="15" fill="#333333">明文弱口令贯穿库与监控台</text>
+
+          <!-- ── 类目二：数据与运维缺口 ── -->
+          <rect x="413" y="0" width="374" height="56" fill="#006393"/>
+          <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M451,28 a9,9 0 1 1 -3.2,-6.9"/><polygon points="451,17 451,24 446,21" fill="#FFFFFF" stroke="none"/>
+          </g>
+          <text x="469" y="35" font-size="18" font-weight="700" fill="#FFFFFF">一致性与可运维缺口</text>
+          <text x="769" y="35" text-anchor="end" font-size="13" fill="#FFFFFF" fill-opacity="0.85">17 条</text>
+          <rect x="413" y="56" width="374" height="236" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1.5"/>
+          <line x1="437" y1="84" x2="451" y2="84" stroke="#006393" stroke-width="2.5"/>
+          <text x="463" y="90" font-size="15" fill="#333333">find_in_set 在 PG 必然报错</text>
+          <line x1="431" y1="112" x2="769" y2="112" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="437" y1="140" x2="451" y2="140" stroke="#006393" stroke-width="2.5"/>
+          <text x="463" y="146" font-size="15" fill="#333333">QRTZ_* 11 张表休眠不用</text>
+          <line x1="431" y1="168" x2="769" y2="168" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="437" y1="196" x2="451" y2="196" stroke="#006393" stroke-width="2.5"/>
+          <text x="463" y="202" font-size="15" fill="#333333">双份 MySQL / PG 脚本易漂移</text>
+          <line x1="431" y1="224" x2="769" y2="224" stroke="#F0F0F0" stroke-width="1.5"/>
+          <line x1="437" y1="252" x2="451" y2="252" stroke="#006393" stroke-width="2.5"/>
+          <text x="463" y="258" font-size="15" fill="#333333">src/test 仅 4 个类，无 CI</text>
+
+          <!-- ── 类目三：改进落点（全页唯一走红的类目） ── -->
+          <rect x="826" y="0" width="374" height="56" fill="#CC0000"/>
+          <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="855" cy="28" r="9"/><circle cx="855" cy="28" r="3"/>
+          </g>
+          <text x="882" y="35" font-size="18" font-weight="700" fill="#FFFFFF">改进落点（先做三件）</text>
+          <rect x="826" y="56" width="374" height="236" fill="#FFF2F2" stroke="#CC0000" stroke-width="2"/>
+          <line x1="850" y1="84" x2="864" y2="84" stroke="#CC0000" stroke-width="2.5"/>
+          <text x="876" y="90" font-size="15" fill="#333333">补齐 open:* 或统一拦截</text>
+          <line x1="844" y1="112" x2="1182" y2="112" stroke="#E8B4B4" stroke-width="1.5"/>
+          <line x1="850" y1="140" x2="864" y2="140" stroke="#CC0000" stroke-width="2.5"/>
+          <text x="876" y="146" font-size="15" fill="#333333">修复 find_in_set 方言分支</text>
+          <line x1="844" y1="168" x2="1182" y2="168" stroke="#E8B4B4" stroke-width="1.5"/>
+          <line x1="850" y1="196" x2="864" y2="196" stroke="#CC0000" stroke-width="2.5"/>
+          <text x="876" y="202" font-size="15" fill="#333333">开启 CSRF 并注入 Token</text>
+          <line x1="844" y1="224" x2="1182" y2="224" stroke="#E8B4B4" stroke-width="1.5"/>
+          <line x1="850" y1="252" x2="864" y2="252" stroke="#CC0000" stroke-width="2.5"/>
+          <text x="876" y="258" font-size="15" fill="#333333">口令与密钥移出源码入库</text>
+
+          <!-- ── 底部结论带 ── -->
+          <rect x="0" y="320" width="1200" height="84" fill="#FFF2F2" stroke="#CC0000" stroke-width="2"/>
+          <g stroke="#CC0000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="38" cy="362" r="11"/><circle cx="38" cy="362" r="3.6"/>
+          </g>
+          <text x="74" y="356" font-size="19" font-weight="700" fill="#CC0000">先补权限与凭据两处硬缺口，再拆双轨数据访问</text>
+          <text x="74" y="384" font-size="13.5" fill="#777777">口径：architecture.md §9.5 —— 39 条风险中 P0 4 条（find_in_set / 弱口令 / 36 端点零注解 / need_sign=0）</text>
+          <text x="1184" y="372" text-anchor="end" font-size="13" fill="#CC0000">分类的收口</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：architecture.md §9.1–§9.5 风险清单与优先级总览（RISK-SEC 15 / CONS 8 / OPS 9 / EXT 7）；change-hotspots.md 热点总表（13 个热点）</span><span>13 / 14</span></div>
+</section>
+
+<!-- ================================================================
+     P14 · 结语 · 三形态判定：一句核心结论 → 金句聚焦（图形页特例）
+     模板：库 A · 21 金句聚焦页 / 过渡页 · 通栏 1880×700（已删图底说明行，viewBox 收至 0 0 1200 350 → 1880×548）
+     ================================================================ -->
+<section class="slide">
+  <header class="title-zone">
+    <h1>结语：把设计强度变成实际强度，是这份材料唯一的建议</h1>
+    <span class="kicker">Closing</span>
+  </header>
+  <div class="rule"></div>
+  <main class="body">
+    <div class="main wide" style="flex:0 0 548px">
+      <div class="col-figure">
+        <svg width="1880" height="548" viewBox="0 0 1200 350" xmlns="http://www.w3.org/2000/svg">
+          <line x1="60" y1="196" x2="150" y2="196" stroke="#CCCCCC" stroke-width="2"/>
+          <line x1="1050" y1="196" x2="1140" y2="196" stroke="#CCCCCC" stroke-width="2"/>
+
+          <rect x="560" y="86" width="80" height="6" fill="#CC0000"/>
+
+          <text x="600" y="196" text-anchor="middle" font-size="40" font-weight="700" fill="#333333">设计强度不等于实际强度</text>
+          <text x="600" y="252" text-anchor="middle" font-size="21" fill="#A3A3A3">六段过滤器链也要靠一个开关才生效；可复现的部署只有一条路</text>
+          <text x="600" y="332" text-anchor="middle" font-size="15" fill="#A3A3A3">—— SYS-qvsu-openapi 架构逆向 · 2026-03-27 核验基线</text>
+        </svg>
+      </div>
+    </div>
+  </main>
+  <div class="footer"><span>资料来源：technical-architecture.md §架构结论汇总</span><span>14 / 14</span></div>
+</section>
+
+</div></div>
+
+<div id="nav">
+  <button id="prev" title="上一页">‹</button>
+  <span id="dots"></span>
+  <button id="next" title="下一页">›</button>
+  <span id="pg">01 / 14</span>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============ ECharts 基础变量与工具（照抄 echarts图表模板.html 的公共部分） ============ */
+var C = {
+  red:'#CC0000', blue:'#006393', ink:'#333333', gray:'#A3A3A3',
+  g1:'#D9D9D9', g2:'#C4C4C4', lgray:'#F5F5F5', hl:'#FFF2F2',
+  line:'#CCCCCC', hair:'#EEEEEE', axis:'#666666'
+};
+var FONT = '"PingFang SC","Microsoft YaHei","Hiragino Sans GB",Arial,sans-serif';
+
+function TIP(trig, extra){
+  return Object.assign({
+    trigger: trig || 'axis',
+    backgroundColor:'#FFFFFF', borderColor:'#DDDDDD', borderWidth:1,
+    padding:[10,14], confine:true,
+    textStyle:{ color:C.ink, fontSize:15, fontFamily:FONT },
+    extraCssText:'border-radius:2px;box-shadow:none;'
+  }, extra || {});
+}
+function GRID(l, r, t, b){
+  return { left:l===undefined?24:l, right:r===undefined?24:r,
+           top:t===undefined?76:t, bottom:b===undefined?18:b, containLabel:true };
+}
+function AXVAL(nm, fmt, extra){
+  return Object.assign({
+    type:'value', name:nm||'',
+    nameTextStyle:{ color:C.gray, fontSize:14, fontFamily:FONT, padding:[0,0,10,0] },
+    axisLine:{ show:false }, axisTick:{ show:false },
+    axisLabel:{ color:C.axis, fontSize:16, fontFamily:FONT, formatter:fmt||'{value}' },
+    splitLine:{ lineStyle:{ color:C.hair, type:'dashed' } }
+  }, extra || {});
+}
+function AXCATY(d, extra){
+  return Object.assign({
+    type:'category', data:d,
+    axisLine:{ lineStyle:{ color:C.line, width:1 } },
+    axisTick:{ show:false },
+    axisLabel:{ color:C.axis, fontSize:16, fontFamily:FONT, margin:12 }
+  }, extra || {});
+}
+
+var OPT = {};
+
+/* ---------- P04 · B·09 横向条形排名（6 个模块类数 / module-index.md §2） ---------- */
+OPT.ch4 = (function(){
+  var D = [['common 通用基座',113],['system 系统管理域',50],['framework 框架层',46],
+           ['open 开放平台网关',22],['quartz 调度域',19],['web Web 入口层',15]];
+  D.sort(function(a,b){ return b[1]-a[1]; });
+  return {
+    tooltip: TIP('item', { formatter:'{b}<br/>类数 {c} 个' }),
+    grid: GRID(16, 96, 24, 16),
+    xAxis: AXVAL('类数（个）', '{value}', { splitLine:{ lineStyle:{ color:C.hair, type:'dashed' } } }),
+    yAxis: AXCATY(D.map(function(d){ return d[0]; }), { inverse:true,
+      axisLabel:{ color:C.ink, fontSize:17, fontWeight:'bold', fontFamily:FONT, margin:14 } }),
+    series: [
+      { type:'bar', barWidth:30,
+        data:D.map(function(d,i){
+          return { value:d[1], itemStyle:{ color: i===0 ? C.red : (i<=2 ? C.blue : C.gray) } };
+        }),
+        label:{ show:true, position:'right', fontSize:17, fontWeight:'bold', color:C.ink, formatter:'{c}' } }
+    ]
+  };
+})();
+
+/* ---------- P07 · B·12 环形 + 中心 KPI（端点权限覆盖 / PROGRESS.md §4） ---------- */
+OPT.ch7 = (function(){
+  var total = 184, ok = 105, bad = 79;
+  return {
+    tooltip: TIP('item', { formatter:function(p){ return p.name+'<br/>'+p.value+' 个端点'; } }),
+    series: [
+      { type:'pie', radius:['50%','72%'], center:['50%','50%'], startAngle:90, clockwise:true,
+        data:[
+          { name:'无权限码端点', value:bad, itemStyle:{ color:C.red } },
+          { name:'带权限码端点', value:ok,  itemStyle:{ color:C.g2 } }
+        ],
+        itemStyle:{ borderColor:'#FFF', borderWidth:3 },
+        label:{ show:false }, labelLine:{ show:false } }
+    ],
+    graphic:[
+      { type:'text', left:'center', top:'38%',
+        style:{ text:String(bad), font:FONT, fontSize:56, fontWeight:'bold', fill:C.red, textAlign:'center' } },
+      { type:'text', left:'center', top:'50%',
+        style:{ text:'个端点无 @RequiresPermissions', font:FONT, fontSize:16, fill:C.gray, textAlign:'center' } },
+      { type:'text', left:'center', top:'56%',
+        style:{ text:'总端点 184 · 覆盖 105 个（57.1%）', font:FONT, fontSize:17, fontWeight:'bold', fill:C.ink, textAlign:'center' } },
+
+      { type:'text', left:'6%', top:'36%',
+        style:{ text:'端点权限总账', font:FONT, fontSize:17, fontWeight:'bold', fill:C.blue } },
+      { type:'text', left:'6%', top:'42%',
+        style:{ text:'带权限码 105 个（57.1%）', font:FONT, fontSize:16, fill:C.ink } },
+      { type:'text', left:'6%', top:'47%',
+        style:{ text:'无权限码 79 个（42.9%）', font:FONT, fontSize:16, fill:C.ink } },
+      { type:'text', left:'6%', top:'52%',
+        style:{ text:'权限码总数 55 个 · 菜单 149 行', font:FONT, fontSize:16, fill:C.gray } },
+
+      { type:'text', left:'72%', top:'36%',
+        style:{ text:'按模块看注解声明数', font:FONT, fontSize:17, fontWeight:'bold', fill:C.ink } },
+      { type:'text', left:'72%', top:'42%',
+        style:{ text:'MOD-web 95 处 · MOD-quartz 18 处', font:FONT, fontSize:16, fill:C.ink } },
+      { type:'text', left:'72%', top:'47%',
+        style:{ text:'MOD-open 0 处：5 个管理控制器', font:FONT, fontSize:16, fill:C.ink } },
+      { type:'text', left:'72%', top:'52%',
+        style:{ text:'36 个管理端点零注解（源码计数）', font:FONT, fontSize:16, fill:C.ink } }
+    ]
+  };
+})();
+
+/* ---------- P09 · B·14 矩形树图（34 张表按 5 簇 / database-relations.md §4） ---------- */
+OPT.ch9 = (function(){
+  function leaf(name, value, color, labColor){
+    return { name:name, value:value, itemStyle:{ color:color }, label:{ color: labColor || '#FFFFFF' } };
+  }
+  var data = [
+    leaf('Quartz 调度簇', 13, C.red),
+    leaf('系统权限簇', 9, '#2E7FA3'),
+    leaf('开放平台簇', 5, '#5CA3C0'),
+    leaf('审计与通知簇', 4, '#B8B8B8', '#333333'),
+    leaf('字典参数簇', 3, '#D2D2D2', '#333333')
+  ];
+  var LEG = [
+    ['Quartz 调度簇', 13, C.red],
+    ['系统权限簇', 9, '#2E7FA3'],
+    ['开放平台簇', 5, '#5CA3C0'],
+    ['审计与通知簇', 4, '#B8B8B8'],
+    ['字典参数簇', 3, '#D2D2D2']
+  ];
+  var gfx = [{ type:'text', left:24, top:8,
+    style:{ text:'34 张物理表 · 342 个字段 · 5 个关系簇（按表数铺面积）', font:FONT, fontSize:16, fontWeight:'bold', fill:C.ink },
+    silent:true }];
+  LEG.forEach(function(L, i){
+    var x = 24 + i * 340;
+    gfx.push({ type:'rect', left:x, top:664, shape:{ width:13, height:13 }, style:{ fill:L[2] }, silent:true });
+    gfx.push({ type:'text', left:x + 22, top:661,
+      style:{ text:L[0] + '　' + L[1] + ' 张', font:FONT, fontSize:16, fill:C.ink, fontWeight:'bold' }, silent:true });
+  });
+  return {
+    tooltip: TIP('item', { formatter:function(p){ return p.name+'<br/>'+p.value+' 张表'; } }),
+    series: [
+      { type:'treemap', roam:false, nodeClick:false, breadcrumb:{ show:false },
+        left:8, right:8, top:44, bottom:74,
+        sort:'none',
+        itemStyle:{ borderColor:'#FFF', borderWidth:3, gapWidth:3 },
+        label:{ show:true, fontSize:17, fontFamily:FONT, color:'#FFFFFF', lineHeight:24,
+          formatter:function(p){ return p.name+'\n'+p.value+' 张表'; } },
+        data:data }
+    ],
+    graphic: gfx
+  };
+})();
+
+/* ---------- P11 · B·26 进度条组（8 类资产对账覆盖率 / PROGRESS.md §2） ---------- */
+OPT.ch11 = (function(){
+  var D = [['源码文件',81.9],['入口 / DAO / 模型文件',100],['HTTP 路由字面量',100],
+           ['Mapper 语句',100],['配置键',100],['权限码',100],
+           ['去重物理表',100],['接口节点',100]];
+  return {
+    tooltip: TIP('item', { formatter:'{b}　对账覆盖率 {c}%' }),
+    grid: GRID(20, 96, 44, 18),
+    xAxis: AXVAL('对账覆盖率（%）', '{value}%', { max:120, min:0 }),
+    yAxis: AXCATY(D.map(function(d){ return d[0]; }), { inverse:true,
+      axisLabel:{ color:C.ink, fontSize:17, fontWeight:'bold', fontFamily:FONT, margin:14 } }),
+    series: [
+      { type:'bar', barWidth:28,
+        showBackground:true, backgroundStyle:{ color:C.lgray },
+        data:D.map(function(d){ return { value:d[1], itemStyle:{ color: d[1] < 100 ? C.red : C.blue } }; }),
+        label:{ show:true, position:'right', fontSize:17, fontWeight:'bold', color:C.ink,
+          formatter:function(p){ return p.value + '%'; } },
+        markLine:{ silent:true, symbol:'none',
+          data:[{ xAxis:100 }],
+          lineStyle:{ color:C.ink, width:2 },
+          label:{ formatter:'基准 100%', color:C.ink, fontSize:15, position:'start' } } }
+    ]
+  };
+})();
+
+/* ============ 页面 → 图表 映射（0 基页序） ============ */
+var CHART_IDS = { 3:['ch4'], 6:['ch7'], 8:['ch9'], 10:['ch11'] };
+var INST = {};
+
+/* ============ 居中缩放：stage 固定 1920×1080，transform-origin: top left ============ */
+var stage  = document.getElementById('stage');
+var slides = [].slice.call(document.querySelectorAll('.slide'));
+var dots   = document.getElementById('dots');
+var label  = document.getElementById('pg');
+var cur    = 0;
+var forceAll = /[?&#]all\b/.test(location.href);
+
+function fit(){
+  var s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  var x = (innerWidth  - 1920 * s) / 2;
+  var y = (innerHeight - 1080 * s) / 2;
+  stage.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
+}
+addEventListener('resize', fit); fit();
+
+function drawCharts(i){
+  var ids = CHART_IDS[i];
+  if(!ids || !window.echarts) return;
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    if(!INST[id]) INST[id] = echarts.init(el, null, { renderer:'canvas', devicePixelRatio:2 });
+    INST[id].setOption(OPT[id]);
+    INST[id].resize();
+  });
+}
+
+slides.forEach(function(_, i){
+  var d = document.createElement('span');
+  d.className = 'dot';
+  d.onclick = function(){ go(i); };
+  dots.appendChild(d);
+});
+
+function go(i){
+  cur = (i + slides.length) % slides.length;
+  slides.forEach(function(s, k){ s.className = 'slide' + (k === cur ? ' on' : ''); });
+  [].slice.call(dots.children).forEach(function(d, k){ d.className = 'dot' + (k === cur ? ' on' : ''); });
+  label.textContent = String(cur + 1).padStart(2, '0') + ' / ' + slides.length;
+  drawCharts(cur);
+}
+
+document.getElementById('prev').onclick = function(){ go(cur - 1); };
+document.getElementById('next').onclick = function(){ go(cur + 1); };
+addEventListener('keydown', function(e){
+  if(e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown'){ e.preventDefault(); go(cur + 1); }
+  if(e.key === 'ArrowLeft'  || e.key === 'PageUp'){ e.preventDefault(); go(cur - 1); }
+  if(e.key === 'Home'){ e.preventDefault(); go(0); }
+  if(e.key === 'End'){ e.preventDefault(); go(slides.length - 1); }
+});
+
+/* ?all / #all：把每一页都渲染一遍，供打印 / PDF / 无头截图使用 */
+if(forceAll){
+  slides.forEach(function(_, k){ slides[k].className = 'slide on'; drawCharts(k); });
+}
+
+var h = parseInt(location.hash.replace('#', ''), 10);
+go(isNaN(h) ? 0 : h - 1);
+
+addEventListener('resize', function(){
+  Object.keys(INST).forEach(function(id){ INST[id].resize(); });
+});
+
+/* 导航条自动显隐 */
+var nav = document.getElementById('nav'), tm = null;
+function poke(){
+  nav.className = 'show';
+  clearTimeout(tm);
+  tm = setTimeout(function(){ nav.className = ''; }, 1800);
+}
+addEventListener('mousemove', poke);
+addEventListener('keydown', poke);
+})();
+</script>
+</body>
+</html>

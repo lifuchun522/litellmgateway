@@ -1,0 +1,50 @@
+name: openapi-local
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:11}
+    container_name: openapi-postgres11
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+      POSTGRES_DB: ${POSTGRES_DB:-jd_openapi}
+      TZ: Asia/Shanghai
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - type: bind
+        source: ${POSTGRES_DATA_DIR:-D:/data/jd_openapi/postgres}
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: ./postgres/init
+        target: /docker-entrypoint-initdb.d
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  openapi:
+    build:
+      context: ../../
+      dockerfile: deploy/local-docker/Dockerfile
+    image: openapi-app:local
+    container_name: openapi-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/opt/openapi/conf/application-docker-local.yml
+      TZ: Asia/Shanghai
+
+    ports:
+      - "${APP_PORT:-5656}:5656"
+    volumes:
+      - type: bind
+        source: ./conf/application-docker-local.yml
+        target: /opt/openapi/conf/application-docker-local.yml
+        read_only: true

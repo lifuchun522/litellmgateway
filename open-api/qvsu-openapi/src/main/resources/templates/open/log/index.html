@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head><th:block th:include="include :: header('Open调用日志')" /></head>
+<body class="gray-bg">
+<div class="container-div">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="alert alert-info" id="statsBar">今日调用量: 0，成功率: 0%，平均耗时: 0ms</div>
+            <div class="alert alert-success" id="topAppsBar">Top应用: -</div>
+        </div>
+        <div class="col-sm-12 search-collapse">
+            <form id="log-form"><div class="select-list"><ul>
+                <li>traceId：<input type="text" name="traceId"/></li>
+                <li>appKey：<input type="text" name="appKey"/></li>
+                <li>API路径：<input type="text" name="apiPath"/></li>
+                <li>状态：<select name="status"><option value="">全部</option><option value="0">成功</option><option value="1">鉴权失败</option><option value="2">转发失败</option></select></li>
+                <li class="select-time">
+                    时间：
+                    <input type="text" class="time-input" id="startTime" placeholder="开始时间"/>
+                    <span>-</span>
+                    <input type="text" class="time-input" id="endTime" placeholder="结束时间"/>
+                </li>
+                <li>
+                    <a class="btn btn-primary btn-rounded btn-sm" onclick="$.table.search()"><i class="fa fa-search"></i>&nbsp;搜索</a>
+                    <a class="btn btn-warning btn-rounded btn-sm" onclick="$.form.reset()"><i class="fa fa-refresh"></i>&nbsp;重置</a>
+                    <a class="btn btn-success btn-rounded btn-sm" onclick="exportCsv()"><i class="fa fa-download"></i>&nbsp;导出CSV</a>
+                </li>
+            </ul></div></form>
+        </div>
+        <div class="col-sm-12 select-table table-striped"><table id="bootstrap-table"></table></div>
+    </div>
+</div>
+<th:block th:include="include :: footer" />
+<script>
+    var prefix = ctx + "admin/open/log";
+    $(function() {
+
+        $.table.init({
+            url: prefix + "/list",
+            queryParams: queryParams,
+            detailView: true,
+            modalName: "调用日志",
+            columns: [
+                { field: 'traceId', title: 'TraceId', width: 200 },
+                { field: 'appKey', title: 'AppKey' },
+                { field: 'appName', title: '应用名称' },
+                { field: 'apiPath', title: 'API路径' },
+                { field: 'method', title: '方法', width: 70 },
+                { field: 'respCode', title: 'HTTP码', width: 70 },
+                { field: 'costMs', title: '耗时(ms)', width: 90, formatter: function(v){ return v > 3000 ? '<span style="color:red">' + v + '</span>' : v; } },
+                { field: 'status', title: '状态', width: 80, formatter: function(v){ 
+                    if (v == 0) return '<span class="label label-primary">成功</span>';
+                    if (v == 1) return '<span class="label label-warning">鉴权失败</span>';
+                    return '<span class="label label-danger">转发失败</span>';
+                }},
+                { field: 'callTime', title: '调用时间', width: 150 }
+            ],
+            detailFormatter: function(index, row) {
+                var html = '<div style="padding:10px 16px;">'
+                    + '<p><b>客户端IP：</b>' + escapeHtml($.common.nullToStr(row.clientIp)) + '</p>';
+                if (row.errorMsg) {
+                    html += '<p><b>错误信息：</b><span style="color:red;">' + escapeHtml($.common.nullToStr(row.errorMsg)) + '</span></p>';
+                }
+                html += '<p><b>请求体：</b><pre style="white-space:pre-wrap;max-height:200px;overflow:auto;background:#f8f9fa;">' + escapeHtml($.common.nullToStr(row.reqBody)) + '</pre></p>'
+                    + '<p><b>响应体：</b><pre style="white-space:pre-wrap;max-height:200px;overflow:auto;background:#f8f9fa;">' + escapeHtml($.common.nullToStr(row.respBody)) + '</pre></p>'
+                    + '</div>';
+                return html;
+            }
+
+        });
+        $.get(prefix + "/stats", function(res){
+            if (res.code === 0) {
+                var d = res.data || {};
+                $("#statsBar").text("今日调用量: " + (d.totalCalls || 0) + "，成功率: " + (d.successRate || 0) + "%，平均耗时: " + (d.avgCost || 0) + "ms");
+                var tops = d.topApps || [];
+                if (!tops.length) {
+                    $("#topAppsBar").text("Top应用: -");
+                } else {
+                    var line = tops.map(function(x){ return (x.appName || '未知') + '(' + (x.callCount || 0) + ')'; }).join('，');
+                    $("#topAppsBar").text("Top应用: " + line);
+                }
+            }
+        });
+    });
+
+    function escapeHtml(text) {
+        return $('<div/>').text($.common.nullToStr(text)).html();
+    }
+
+    function queryParams(params) {
+        var search = $.table.queryParams(params);
+        search.params = {
+            beginTime: beginOfTime($("#startTime").val()),
+            endTime: endOfTime($("#endTime").val())
+        };
+        return search;
+    }
+
+
+    function exportCsv() {
+        var p = queryParams({});
+        var q = [];
+        q.push('traceId=' + encodeURIComponent(p.traceId || ''));
+        q.push('appKey=' + encodeURIComponent(p.appKey || ''));
+        q.push('apiPath=' + encodeURIComponent(p.apiPath || ''));
+        q.push('status=' + encodeURIComponent(p.status || ''));
+        if (p.params) {
+            q.push('beginTime=' + encodeURIComponent(p.params.beginTime || ''));
+            q.push('endTime=' + encodeURIComponent(p.params.endTime || ''));
+        }
+        window.location.href = prefix + '/exportCsv?' + q.join('&');
+    }
+</script>
+</body>
+</html>

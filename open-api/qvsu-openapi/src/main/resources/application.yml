@@ -1,0 +1,148 @@
+﻿# 妞ゅ湱娲伴惄绋垮彠闁板秶鐤?
+qvsu:
+  # 閸氬秶袨
+  name: 鑱氭惌OpenAPI绯荤粺
+  # 閻楀牊婀?
+  version: 鑱氭惌OpenAPI绯荤粺
+  # 閻楀牊娼堥獮缈犲敜
+  copyrightYear: 2026
+  # 鐎圭偘绶ュ鏃傘仛瀵偓閸?
+  demoEnabled: true
+  # 閺傚洣娆㈢捄顖氱窞 缁€杞扮伐閿?Windows闁板秶鐤咲:/qvsu/uploadPath閿涘inux闁板秶鐤?/home/qvsu/uploadPath閿?
+  profile: D:/qvsu/uploadPath
+  # 閼惧嘲褰噄p閸︽澘娼冨鈧崗?
+  addressEnabled: false
+  testing:
+    exposeCaptchaCode: false
+
+# 瀵偓閸欐垹骞嗘晶鍐帳缂?
+server:
+  # 閺堝秴濮熼崳銊ф畱HTTP缁旑垰褰涢敍宀勭帛鐠併倓璐?0
+  port: 5656
+  servlet:
+    # 鎼存梻鏁ら惃鍕問闂傤喛鐭惧?
+    context-path: /
+  tomcat:
+    # tomcat閻ㄥ垊RI缂傛牜鐖?
+    uri-encoding: UTF-8
+    # 鏉╃偞甯撮弫鐗堝姬閸氬海娈戦幒鎺楁Е閺佸府绱濇妯款吇娑?00
+    accept-count: 1000
+    threads:
+      # tomcat閺堚偓婢堆呭殠缁嬪鏆熼敍宀勭帛鐠併倓璐?00
+      max: 800
+      # Tomcat閸氼垰濮╅崚婵嗩潗閸栨牜娈戠痪璺ㄢ柤閺佸府绱濇妯款吇閸?0
+      min-spare: 100
+ 
+# 閺冦儱绻旈柊宥囩枂
+logging:
+  level:
+    com.qvsu: debug
+    org.springframework: warn
+
+# 閻劍鍩涢柊宥囩枂
+user:
+  password:
+    # 鐎靛棛鐖滈柨娆掝嚖{maxRetryCount}濞嗭繝鏀ｇ€?0閸掑棝鎸?
+    maxRetryCount: 5
+
+# Spring闁板秶鐤?
+spring:
+  # 濡剝婢樺鏇熸惛
+  thymeleaf:
+    mode: HTML
+    encoding: utf-8
+    # 缁備胶鏁ょ紓鎾崇摠
+    cache: false
+  # 鐠у嫭绨穱鈩冧紖
+  messages:
+    # 閸ヤ粙妾崠鏍カ濠ф劖鏋冩禒鎯扮熅瀵?
+    basename: static/i18n/messages
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+  profiles:
+    active: druid
+  # 閺傚洣娆㈡稉濠佺炊
+  servlet:
+    multipart:
+      # 閸楁洑閲滈弬鍥︽婢堆冪毈
+      max-file-size: 10MB
+      # 鐠佸墽鐤嗛幀璁崇瑐娴肩姷娈戦弬鍥︽婢堆冪毈
+      max-request-size: 20MB
+  # 閺堝秴濮熷Ο鈥虫健
+  devtools:
+    restart:
+      # 閻戭參鍎寸純鎻掔磻閸?
+      enabled: true
+
+# MyBatis
+mybatis:
+  # 閹兼粎鍌ㄩ幐鍥х暰閸栧懎鍩嗛崥?
+  typeAliasesPackage: com.qvsu.**.domain
+  # 闁板秶鐤唌apper閻ㄥ嫭澹傞幓蹇ョ礉閹垫儳鍩岄幍鈧張澶屾畱mapper.xml閺勭姴鐨犻弬鍥︽
+  mapperLocations: classpath*:mapper/**/*Mapper.xml
+  # 閸旂姾娴囬崗銊ョ湰閻ㄥ嫰鍘ょ純顔芥瀮娴?
+  configLocation: classpath:mybatis/mybatis-config.xml
+
+# PageHelper閸掑棝銆夐幓鎺嶆
+pagehelper:
+  helperDialect: postgresql
+  supportMethodsArguments: true
+  params: count=countSql
+
+# Shiro
+shiro:
+  user:
+    # 閻ц缍嶉崷鏉挎絻
+    loginUrl: /login
+    # 閺夊啴妾虹拋銈堢槈婢惰精瑙﹂崷鏉挎絻
+    unauthorizedUrl: /unauth
+    # 妫ｆ牠銆夐崷鏉挎絻
+    indexUrl: /index
+    # 妤犲矁鐦夐惍浣哥磻閸?
+    captchaEnabled: true
+    # 妤犲矁鐦夐惍浣鸿閸?math 閺佹澘鐡х拋锛勭暬 char 鐎涙顑佹宀冪槈
+    captchaType: math
+  cookie:
+    # 鐠佸墽鐤咰ookie閻ㄥ嫬鐓欓崥?姒涙顓荤粚鐚寸礉閸楀啿缍嬮崜宥堫問闂傤喚娈戦崺鐔锋倳
+    domain:
+    # 鐠佸墽鐤哻ookie閻ㄥ嫭婀侀弫鍫ｎ問闂傤喛鐭惧?
+    path: /
+    # 鐠佸墽鐤咹ttpOnly鐏炵偞鈧?
+    httpOnly: true
+    # 鐠佸墽鐤咰ookie閻ㄥ嫯绻冮張鐔告闂傝揪绱濇径鈺€璐熼崡鏇氱秴
+    maxAge: 30
+    # 鐠佸墽鐤嗙€靛棝鎸滈敍灞藉韫囧懍绻氶幐浣告暜娑撯偓閹嶇礄閻㈢喐鍨氶弬鐟扮础閿涘瞼娲块幒銉﹀鐠愭繂鍩宮ain鏉╂劘顢戦崡鍐插讲閿涘ase64.encodeToString(CipherUtils.generateNewKey(128, "AES").getEncoded()) 閿涘牓绮拋銈呮儙閸斻劎鏁撻幋鎰版閺堣櫣顫濋柦銉礉闂呭繑婧€缁夋﹢鎸滄导姘嚤閼风繝绠ｉ崜宥咁吂閹撮顏琑ememberMe Cookie閺冪姵鏅ラ敍灞筋洤鐠佸墽鐤嗛崶鍝勭暰缁夋﹢鎸淩ememberMe Cookie閸掓瑦婀侀弫鍫礆
+    cipherKey:
+  session:
+    # Session鐡掑懏妞傞弮鍫曟？閿?1娴狅綀銆冨闀愮瑝鏉╁洦婀￠敍鍫ョ帛鐠?0閸掑棝鎸撻敍?
+    expireTime: 30
+    # 閸氬本顒瀞ession閸掔増鏆熼幑顔肩氨閻ㄥ嫬鎳嗛張鐕傜礄姒涙顓?閸掑棝鎸撻敍?
+    dbSyncPeriod: 1
+    # 閻╂悂娈ф径姘畽濡偓閺屻儰绔村▎顡筫ssion閻ㄥ嫭婀侀弫鍫熲偓褝绱濇妯款吇鐏忚鲸妲?0閸掑棝鎸?
+    validationInterval: 10
+    # 閸氬奔绔存稉顏嗘暏閹撮攱娓舵径褌绱扮拠婵囨殶閿涘本鐦俊?閻ㄥ嫭鍓伴幀婵囨Ц閸氬奔绔存稉顏囧閸欏嘲鍘戠拋鍛婃付婢舵艾鎮撻弮鏈佃⒈娑擃亙姹夐惂璇茬秿閿涘牓绮拋?1娑撳秹妾洪崚璁圭礆
+    maxSession: -1
+    # 闊垹鍤稊瀣閻ц缍嶉惃?娑斿鎮楅惂璇茬秿閻ㄥ嫮鏁ら幋鍑ょ礉姒涙顓婚煪銏犲毉娑斿澧犻惂璇茬秿閻ㄥ嫮鏁ら幋?
+    kickoutAfter: false
+  rememberMe:
+    # 閺勵垰鎯佸鈧崥顖濐唶娴ｅ繑鍨?
+    enabled: true
+
+# 闂冨弶顒沊SS閺€璇插毊
+xss:
+  # 鏉╁洦鎶ゅ鈧崗?
+  enabled: true
+  # 閹烘帡娅庨柧鐐复閿涘牆顦挎稉顏嗘暏闁褰块崚鍡涙閿?
+  excludes: /system/notice/*
+  # 閸栧綊鍘ら柧鐐复
+  urlPatterns: /system/*,/tool/*
+
+# 闂冨弶顒沜srf閺€璇插毊
+csrf:
+  # 鏉╁洦鎶ゅ鈧崗?
+  enabled: false
+  # 閻ц棄鎮曢崡鏇礄婢舵矮閲滈悽銊┾偓妤€褰块崚鍡涙閿?
+  whites: /druid
+
+

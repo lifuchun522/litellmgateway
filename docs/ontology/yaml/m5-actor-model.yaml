@@ -1,0 +1,1087 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# M5 主体模型元文件 - m5-actor-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务）
+#
+# 【来源】基于已通过校验的逆向元模型产出：
+#   - docs/meta-model/source-asset-inventory.md 第 6 节「权限码登记（逐个权限码）」
+#       → 55 个由 @RequiresPermissions 声明的权限码，逐条抄录，不做增删
+#   - docs/meta-model/source-asset-inventory.md 第 7 节「菜单资产登记」
+#       → 菜单 ID / 类型 / 父菜单 / URL / perms，用于确定权限码所属菜单
+#   - docs/meta-model/common-capability-index.md
+#       → COMMON-permission（五级授权模型）、COMMON-authentication（登录会话）、
+#         COMMON-tenant-organization（dataScope）、COMMON-idempotency-lock（网关签名与防重放）
+#   - docs/meta-model/business-architecture.md §1.1/§2/§5
+#       → 4 个业务域、18 个业务能力、16 个菜单、菜单到权限码的授予关系
+#   - open-api/sql/open_api_menu.sql、sql/quartz.sql、deploy/local-docker/postgres/init/10-qvsu.sql
+#       → sys_role / sys_role_menu / sys_menu 种子数据（角色、菜单、授权关系）
+#   - 源码：com.qvsu.framework.config.ShiroConfig、com.qvsu.framework.shiro.service.*、
+#          com.qvsu.framework.aspectj.DataScopeAspect、com.qvsu.open.*
+#
+# 【书写约定】
+#   1. 键名严格使用《M5 主体模型规范》给出的键名（actorId/name/actorType/roles/attributes、
+#      roleId/name/inheritsFrom/permissions/permissionGroups、permissionId/targetType/targetRef/
+#      dataScope/abacCondition），不新增键名；规范外语义一律写中文注释。
+#   2. 每个权限以注释登记五项对账信息：权限码 ｜ 资源 ｜ 动作 ｜ 所属菜单 ｜ 授予角色。
+#   3. targetType 取值 BEHAVIOR / ENTITY：本系统为存量系统正向表达，尚无 M2 行为模型，
+#      故所有权限一律按 ENTITY 授权到 M1 聚合根（数据资源），targetRef 指向 m1-object-model.yaml 的聚合根 ID。
+#   4. 本系统未使用「权限组（PermissionGroup）」独立元素：权限分组由 sys_menu 的 M/C（目录/菜单）
+#      层级天然承担，roles.permissionGroups 故不填写，改以菜单归属注释表达。
+#   5. 推断项以 `# 推断` 标注；无法从源码确认的现状与目标差异以 `# 待确认` 标注。
+# ══════════════════════════════════════════════════════════════════════════════
+
+model_type: ACTOR
+version: "1.0"
+domain: "QVSU OpenAPI 管理与网关服务"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 参与者（Actor）
+#
+# 人类参与者由 sys_user 账号承载（登录后经 Shiro Session 成为认证主体）；
+# 系统参与者不拥有 sys_user 账号，其「身份」来自机器凭据或调度器本身：
+#   - ACTOR-THIRD-APP 以 open_app.app_key / app_secret 作为机器身份；
+#   - ACTOR-QUARTZ 以 sys_job 定义 + Quartz 调度器作为执行主体；
+#   - ACTOR-GATEWAY 是应用内的系统组件主体（转发与写日志的执行者）。
+# ══════════════════════════════════════════════════════════════════════════════
+actors:
+
+  - actorId: ACTOR-SUPER-ADMIN
+    name: 超级管理员
+    actorType: HUMAN
+    roles:
+      - ROLE-ADMIN
+    attributes:
+      loginName: admin
+      userId: 1
+      roleKey: admin
+      isAdmin: true
+      dataScope: "1"
+    # 证据：10-qvsu.sql 第 71 行 sys_user 种子（user_id=1, login_name='admin', user_name='qvsu'）；
+    # SysUser.isAdmin() 以 userId==1 判定，DataScopeAspect 对 isAdmin 直接跳过数据范围过滤
+
+  - actorId: ACTOR-SYS-ADMIN
+    name: 系统管理员
+    actorType: HUMAN
+    roles:
+      - ROLE-SYS-ADMIN
+      - ROLE-COMMON
+    attributes:
+      permits: "system:* 全部权限码（用户/角色/菜单/部门/岗位/字典/参数/公告）"
+      dataScope: "1 或 3（取决于实际分配的角色数据范围）"
+    # 推断：sys_role 种子仅有一条 admin 与一条 common，未预置独立的「系统管理员」角色；
+    # 本参与者按业务职责（维护平台主数据）派生，落地时以「新建角色 + 勾选 100~107 菜单及其 F 类按钮」实现
+
+  - actorId: ACTOR-OPEN-ADMIN
+    name: 开放平台管理员
+    actorType: HUMAN
+    roles:
+      - ROLE-OPEN-ADMIN
+    attributes:
+      permits: "open:* 全部 16 个菜单权限码（open:app / open:api / open:auth / open:log / open:doc）"
+    # 推断：open:* 权限码只存在于 sql/open_api_menu.sql 的 sys_menu.perms 中，且被授予 role_id=1 与 2；
+    # 代码侧 com.qvsu.open 的 6 个管理控制器无任何 @RequiresPermissions，故「开放平台管理员」当前是
+    # 菜单可见性层面的角色，而非后端强制授权角色（见文末「权限缺口建模说明」）
+
+  - actorId: ACTOR-AUDITOR
+    name: 审计管理员
+    actorType: HUMAN
+    roles:
+      - ROLE-AUDITOR
+    attributes:
+      permits: "monitor:job:* 8 个权限码 + 调用日志菜单 open:log:view / open:log:list"
+    # 推断：本系统不存在独立的审计角色；审计职责由 monitor:job:* 与 open:log:* 组合派生
+    # 待确认：sys_oper_log / sys_logininfor / sys_user_online 三张审计表无查询端点与菜单
+    #        （open_api_menu.sql 第 82-90 行显式删除了 monitor:operlog:*、monitor:logininfor:*、monitor:online:*），
+    #        因此「审计管理员」当前无法在界面上读取操作审计与登录审计数据
+
+  - actorId: ACTOR-LOGGED-USER
+    name: 已登录用户
+    actorType: HUMAN
+    roles:
+      - ROLE-COMMON
+    attributes:
+      authenticated: true
+      deptId: "sys_user.dept_id"
+      roleKeys: "由 sys_user_role → sys_role.role_key 推导"
+      dataScope: "由所拥有角色的 sys_role.data_scope 决定；多角色取并集"
+    # 证据：ShiroConfig 第 349 行兜底过滤链 /** -> user,kickout,onlineSession,syncOnlineSession,csrfValidateFilter，
+    # 即除白名单外全部入口要求已认证会话；未认证时重定向 shiro.user.loginUrl=/login
+
+  - actorId: ACTOR-ANONYMOUS
+    name: 匿名访问者
+    actorType: HUMAN
+    roles:
+      - ROLE-ANONYMOUS
+    attributes:
+      authenticated: false
+      allowedPaths: "/login、/register、/captcha/**、/open/**、/selftest/**、静态资源（/css/** /js/** /img/** /ajax/** /fonts/** /html/** /docs/** /qvsu/** /ruoyi/**）、/favicon.ico、/qvsu.png、/ruoyi.png"
+      thirdPartyGateway: "经 /open/** 匿名进入后由 OpenApiFilter 独立完成鉴权，Shiro 不参与"
+    # 证据：ShiroConfig 第 306-334 行 filterChainDefinitionMap 的 anon 白名单
+    # 推断：将匿名访问者建模为 HUMAN（未认证的人类浏览器使用者）；/open/** 与 /selftest/** 虽同为 anon，
+    #      但其调用方是机器身份，故分别归入 ACTOR-THIRD-APP 与 ACTOR-LOGGED-USER（自检入口）
+
+  - actorId: ACTOR-THIRD-APP
+    name: 第三方接入应用
+    actorType: SYSTEM
+    roles:
+      - ROLE-OPEN-CLIENT
+    attributes:
+      credential: "X-App-Key + X-Timestamp + X-Nonce + X-Sign（HmacSHA256）"
+      appKeySource: open_app.app_key
+      appSecretSource: open_app.app_secret
+      authorizationSource: open_app_api（应用-接口授权多对多）
+      mustBeEnabled: "open_app.status = 1"
+      mustNotExpire: "open_app.expire_time IS NULL OR open_app.expire_time > now()"
+    # 证据：OpenApiSecurityService.authenticate 八步鉴权；OpenApiFilter.shouldNotFilter 仅对 /open/ 前缀生效
+    # 该参与者是机器身份（非 sys_user），其权限不来自 sys_role/sys_role_menu，
+    # 而来自 open_app_api 授权关系 + open_api.need_sign / open_api.status
+
+  - actorId: ACTOR-QUARTZ
+    name: Quartz 调度器
+    actorType: SYSTEM
+    roles:
+      - ROLE-SYSTEM-QUARTZ
+    attributes:
+      trigger: "cron（sys_job.cron_expression）"
+      dispatchTarget: "Bean 调用 invokeTarget 或 HTTP 调用 requestUrl"
+      recordLog: sys_job_log
+      concurrencyControl: "sys_job.concurrent（0 允许并发 / 1 禁止并发，后者用 @DisallowConcurrentExecution）"
+    # 证据：com.qvsu.quartz.util.AbstractQuartzJob / ScheduleUtils / QuartzJobExecution /
+    # QuartzDisallowConcurrentExecution；非菜单功能 FUNC-job-scheduler（触发类型 scheduled，入口 JOB-quartz-dispatch）
+    # 系统参与者：无交互界面、无权限码，其「授权边界」由 sys_job 白名单校验控制（见 m3-rule-model.yaml）
+
+  - actorId: ACTOR-GATEWAY
+    name: 开放平台网关
+    actorType: SYSTEM
+    roles:
+      - ROLE-SYSTEM-GATEWAY
+    attributes:
+      components: "OpenApiFilter + OpenApiSecurityService + OpenApiProxyService + OpenApiLogService + OpenGatewayController"
+      writes: open_call_log
+      timeoutSource: "open_api.timeout_ms（缺省 5000 毫秒）"
+    # 推断：网关是应用内的系统组件主体，承担「读 open_api/open_app/open_app_api → 转发 → 无条件写日志」，
+    #      在逆向元模型中未被登记为独立参与者（domain-model 仅登记 OpenAuthContext/OpenResult），
+    #      但为表达「谁写入了 open_call_log」「谁持有目标地址与超时」这两个授权与审计问题，此处显式建模
+    # 证据：business-architecture.md §2 CAP-open-gateway-auth / CAP-open-gateway-proxy；
+    #      OpenApiFilter 第 99-126 行 finally 块无条件调用 openApiLogService.save(...)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 角色（Role）
+#
+# 前两个角色来自 sys_role 种子数据（唯一事实），其余角色由「职责 + 权限码集合」派生，
+# 派生角色均标注 `# 推断`，落地时以新建 sys_role 记录 + sys_role_menu 授权实现。
+# ══════════════════════════════════════════════════════════════════════════════
+roles:
+
+  # ── 种子角色（事实） ────────────────────────────────────────────────────────
+  - roleId: ROLE-ADMIN
+    name: 超级管理员
+    permissions:
+      - PERM-SYS-USER-VIEW
+      - PERM-SYS-USER-LIST
+      - PERM-SYS-USER-ADD
+      - PERM-SYS-USER-EDIT
+      - PERM-SYS-USER-REMOVE
+      - PERM-SYS-USER-EXPORT
+      - PERM-SYS-USER-IMPORT
+      - PERM-SYS-USER-RESET-PWD
+      - PERM-SYS-ROLE-VIEW
+      - PERM-SYS-ROLE-LIST
+      - PERM-SYS-ROLE-ADD
+      - PERM-SYS-ROLE-EDIT
+      - PERM-SYS-ROLE-REMOVE
+      - PERM-SYS-ROLE-EXPORT
+      - PERM-SYS-MENU-VIEW
+      - PERM-SYS-MENU-LIST
+      - PERM-SYS-MENU-ADD
+      - PERM-SYS-MENU-EDIT
+      - PERM-SYS-MENU-REMOVE
+      - PERM-SYS-DEPT-VIEW
+      - PERM-SYS-DEPT-LIST
+      - PERM-SYS-DEPT-ADD
+      - PERM-SYS-DEPT-EDIT
+      - PERM-SYS-DEPT-REMOVE
+      - PERM-SYS-POST-VIEW
+      - PERM-SYS-POST-LIST
+      - PERM-SYS-POST-ADD
+      - PERM-SYS-POST-EDIT
+      - PERM-SYS-POST-REMOVE
+      - PERM-SYS-POST-EXPORT
+      - PERM-SYS-DICT-VIEW
+      - PERM-SYS-DICT-LIST
+      - PERM-SYS-DICT-ADD
+      - PERM-SYS-DICT-EDIT
+      - PERM-SYS-DICT-REMOVE
+      - PERM-SYS-DICT-EXPORT
+      - PERM-SYS-CONFIG-VIEW
+      - PERM-SYS-CONFIG-LIST
+      - PERM-SYS-CONFIG-ADD
+      - PERM-SYS-CONFIG-EDIT
+      - PERM-SYS-CONFIG-REMOVE
+      - PERM-SYS-CONFIG-EXPORT
+      - PERM-SYS-NOTICE-VIEW
+      - PERM-SYS-NOTICE-LIST
+      - PERM-SYS-NOTICE-ADD
+      - PERM-SYS-NOTICE-EDIT
+      - PERM-SYS-NOTICE-REMOVE
+      - PERM-JOB-VIEW
+      - PERM-JOB-LIST
+      - PERM-JOB-ADD
+      - PERM-JOB-EDIT
+      - PERM-JOB-REMOVE
+      - PERM-JOB-CHANGE-STATUS
+      - PERM-JOB-DETAIL
+      - PERM-JOB-EXPORT
+      - PERM-OPEN-APP-VIEW
+      - PERM-OPEN-APP-LIST
+      - PERM-OPEN-APP-ADD
+      - PERM-OPEN-APP-EDIT
+      - PERM-OPEN-APP-REMOVE
+      - PERM-OPEN-API-VIEW
+      - PERM-OPEN-API-LIST
+      - PERM-OPEN-API-ADD
+      - PERM-OPEN-API-EDIT
+      - PERM-OPEN-API-REMOVE
+      - PERM-OPEN-AUTH-VIEW
+      - PERM-OPEN-AUTH-SAVE
+      - PERM-OPEN-LOG-VIEW
+      - PERM-OPEN-LOG-LIST
+      - PERM-OPEN-DOC-VIEW
+      - PERM-OPEN-DOC-GENERATE
+    # 证据：10-qvsu.sql 第 126 行 insert into sys_role values('1','超级管理员','admin',1,1,'0','0',...)
+    #   → role_id=1、role_key='admin'、data_scope=1（全部数据权限）、status='0'（正常）
+    # 授权关系：sys_role_menu 中 role_id=1 记录覆盖全部 system 菜单（10-qvsu.sql 第 4 行起的隐性全集）
+    #   与全部 open 菜单（open_api_menu.sql 第 28-44 行 17 条）
+    #   与全部 job 菜单（quartz.sql 第 211-226 行 8 条）
+    # 旁路语义：role_key='admin' 触发 SysUser.isAdmin()，Shiro 授权判定与 DataScopeAspect 数据范围
+    #   过滤均直接放行，故其权限集合在运行期实际是「全集」
+
+  - roleId: ROLE-COMMON
+    name: 普通角色
+    permissions:
+      - PERM-SYS-USER-VIEW
+      - PERM-SYS-USER-LIST
+      - PERM-SYS-USER-ADD
+      - PERM-SYS-USER-EDIT
+      - PERM-SYS-USER-REMOVE
+      - PERM-SYS-USER-EXPORT
+      - PERM-SYS-USER-IMPORT
+      - PERM-SYS-USER-RESET-PWD
+      - PERM-SYS-ROLE-VIEW
+      - PERM-SYS-ROLE-LIST
+      - PERM-SYS-ROLE-ADD
+      - PERM-SYS-ROLE-EDIT
+      - PERM-SYS-ROLE-REMOVE
+      - PERM-SYS-ROLE-EXPORT
+      - PERM-SYS-MENU-VIEW
+      - PERM-SYS-MENU-LIST
+      - PERM-SYS-MENU-ADD
+      - PERM-SYS-MENU-EDIT
+      - PERM-SYS-MENU-REMOVE
+      - PERM-SYS-DEPT-VIEW
+      - PERM-SYS-DEPT-LIST
+      - PERM-SYS-DEPT-ADD
+      - PERM-SYS-DEPT-EDIT
+      - PERM-SYS-DEPT-REMOVE
+      - PERM-SYS-POST-VIEW
+      - PERM-SYS-POST-LIST
+      - PERM-SYS-POST-ADD
+      - PERM-SYS-POST-EDIT
+      - PERM-SYS-POST-REMOVE
+      - PERM-SYS-POST-EXPORT
+      - PERM-SYS-DICT-VIEW
+      - PERM-SYS-DICT-LIST
+      - PERM-SYS-DICT-ADD
+      - PERM-SYS-DICT-EDIT
+      - PERM-SYS-DICT-REMOVE
+      - PERM-SYS-DICT-EXPORT
+      - PERM-SYS-CONFIG-VIEW
+      - PERM-SYS-CONFIG-LIST
+      - PERM-SYS-CONFIG-ADD
+      - PERM-SYS-CONFIG-EDIT
+      - PERM-SYS-CONFIG-REMOVE
+      - PERM-SYS-CONFIG-EXPORT
+      - PERM-SYS-NOTICE-VIEW
+      - PERM-SYS-NOTICE-LIST
+      - PERM-SYS-NOTICE-ADD
+      - PERM-SYS-NOTICE-EDIT
+      - PERM-SYS-NOTICE-REMOVE
+      - PERM-JOB-VIEW
+      - PERM-OPEN-APP-VIEW
+      - PERM-OPEN-APP-LIST
+      - PERM-OPEN-APP-ADD
+      - PERM-OPEN-APP-EDIT
+      - PERM-OPEN-APP-REMOVE
+      - PERM-OPEN-API-VIEW
+      - PERM-OPEN-API-LIST
+      - PERM-OPEN-API-ADD
+      - PERM-OPEN-API-EDIT
+      - PERM-OPEN-API-REMOVE
+      - PERM-OPEN-AUTH-VIEW
+      - PERM-OPEN-AUTH-SAVE
+      - PERM-OPEN-LOG-VIEW
+      - PERM-OPEN-LOG-LIST
+      - PERM-OPEN-DOC-VIEW
+      - PERM-OPEN-DOC-GENERATE
+    # 证据：10-qvsu.sql 第 127 行 insert into sys_role values('2','普通角色','common',2,2,'0','0',...)
+    #   → role_id=2、role_key='common'、data_scope=2（自定数据权限）、status='0'（正常）
+    # 授权关系：sys_role_menu 中 role_id=2 记录共 47 条 system 菜单
+    #   （10-qvsu.sql 第 254-302 行：菜单 1、4、100~107、1000~1038）
+    #   加 open_api_menu.sql 第 46-62 行 17 条 open 菜单
+    #   加 quartz.sql 第 228-229 行 1 条 job 菜单（仅 menu_id=110，未含 1050~1056 按钮）
+    # 因此本角色的 job 权限集合在库中实际只有 monitor:job:view，未授予任何 job 操作按钮
+    # 数据范围：data_scope=2 且 sys_role_dept 授权部门 100/101/105（10-qvsu.sql 第 317-319 行），
+    #   即该角色在带 @DataScope 的查询中只能看到这三个部门的数据
+
+  # ── 派生角色（按职责与权限码集合推导） ──────────────────────────────────────
+  - roleId: ROLE-SYS-ADMIN
+    name: 系统管理员
+    permissions:
+      - PERM-SYS-USER-VIEW
+      - PERM-SYS-USER-LIST
+      - PERM-SYS-USER-ADD
+      - PERM-SYS-USER-EDIT
+      - PERM-SYS-USER-REMOVE
+      - PERM-SYS-USER-EXPORT
+      - PERM-SYS-USER-IMPORT
+      - PERM-SYS-USER-RESET-PWD
+      - PERM-SYS-ROLE-VIEW
+      - PERM-SYS-ROLE-LIST
+      - PERM-SYS-ROLE-ADD
+      - PERM-SYS-ROLE-EDIT
+      - PERM-SYS-ROLE-REMOVE
+      - PERM-SYS-ROLE-EXPORT
+      - PERM-SYS-MENU-VIEW
+      - PERM-SYS-MENU-LIST
+      - PERM-SYS-MENU-ADD
+      - PERM-SYS-MENU-EDIT
+      - PERM-SYS-MENU-REMOVE
+      - PERM-SYS-DEPT-VIEW
+      - PERM-SYS-DEPT-LIST
+      - PERM-SYS-DEPT-ADD
+      - PERM-SYS-DEPT-EDIT
+      - PERM-SYS-DEPT-REMOVE
+      - PERM-SYS-POST-VIEW
+      - PERM-SYS-POST-LIST
+      - PERM-SYS-POST-ADD
+      - PERM-SYS-POST-EDIT
+      - PERM-SYS-POST-REMOVE
+      - PERM-SYS-POST-EXPORT
+      - PERM-SYS-DICT-VIEW
+      - PERM-SYS-DICT-LIST
+      - PERM-SYS-DICT-ADD
+      - PERM-SYS-DICT-EDIT
+      - PERM-SYS-DICT-REMOVE
+      - PERM-SYS-DICT-EXPORT
+      - PERM-SYS-CONFIG-VIEW
+      - PERM-SYS-CONFIG-LIST
+      - PERM-SYS-CONFIG-ADD
+      - PERM-SYS-CONFIG-EDIT
+      - PERM-SYS-CONFIG-REMOVE
+      - PERM-SYS-CONFIG-EXPORT
+      - PERM-SYS-NOTICE-VIEW
+      - PERM-SYS-NOTICE-LIST
+      - PERM-SYS-NOTICE-ADD
+      - PERM-SYS-NOTICE-EDIT
+      - PERM-SYS-NOTICE-REMOVE
+    # 推断：系统管理员＝system:* 全部 47 个权限码；
+    # 落地方式：新建 sys_role（role_key 建议 'sysadmin'，data_scope 建议 '3' 本部门）
+    # 与 ROLE-COMMON 的差别：仅角色语义与建议数据范围不同，权限码集合当前完全一致
+    #   —— 这反映出现状「权限码粒度只到菜单/按钮，缺少跨部门隔离的角色分层」
+
+  - roleId: ROLE-OPEN-ADMIN
+    name: 开放平台管理员
+    permissions:
+      - PERM-OPEN-APP-VIEW
+      - PERM-OPEN-APP-LIST
+      - PERM-OPEN-APP-ADD
+      - PERM-OPEN-APP-EDIT
+      - PERM-OPEN-APP-REMOVE
+      - PERM-OPEN-API-VIEW
+      - PERM-OPEN-API-LIST
+      - PERM-OPEN-API-ADD
+      - PERM-OPEN-API-EDIT
+      - PERM-OPEN-API-REMOVE
+      - PERM-OPEN-AUTH-VIEW
+      - PERM-OPEN-AUTH-SAVE
+      - PERM-OPEN-LOG-VIEW
+      - PERM-OPEN-LOG-LIST
+      - PERM-OPEN-DOC-VIEW
+      - PERM-OPEN-DOC-GENERATE
+    # 推断：开放平台管理员＝open:* 全部 16 个权限码
+    # 待确认：这 16 个权限码只存在于 sql/open_api_menu.sql 的 sys_menu.perms，
+    #   对应的后端控制器（OpenAppController / OpenApiMgrController / OpenAuthController /
+    #   OpenLogController / OpenDocController）没有任何 @RequiresPermissions 注解，
+    #   故当前只影响前端菜单与按钮可见性，不构成后端强制授权（详见文末「权限缺口建模说明」）
+
+  - roleId: ROLE-AUDITOR
+    name: 审计管理员
+    permissions:
+      - PERM-JOB-VIEW
+      - PERM-JOB-LIST
+      - PERM-JOB-DETAIL
+      - PERM-JOB-EXPORT
+      - PERM-OPEN-LOG-VIEW
+      - PERM-OPEN-LOG-LIST
+    # 推断：审计管理员＝任务查询/详情/导出 + 开放接口调用日志查询
+    # 不含 monitor:job:add / edit / remove / changeStatus（审计角色不应变更被审计对象）
+    # 待确认：操作日志、登录日志、在线会话三类审计数据完全没有查询端点与菜单
+    #   （open_api_menu.sql 第 82-90 行显式删除 monitor:operlog:* / monitor:logininfor:* / monitor:online:*），
+    #   因此本角色的审计范围在当前代码基线上无法覆盖这三类数据
+
+  - roleId: ROLE-OPEN-CLIENT
+    name: 第三方接入应用身份
+    permissions:
+      - PERM-OPEN-GATEWAY-INVOKE
+    # 推断：机器身份角色。其「权限」不来自 sys_role_menu，而来自两类运行期判定：
+    #   (1) 应用可用性：open_app.status = 1 且（expire_time 为空或未过期）；
+    #   (2) 接口授权：open_app_api 中存在 (app_id, api_id) 授权行。
+    #   故此处只声明一个粗粒度权限「调用开放网关接口」，细粒度授权由 open_app_api 逐接口表达。
+    # 证据：OpenApiSecurityService.loadAppInfo / hasPermission
+
+  - roleId: ROLE-SYSTEM-QUARTZ
+    name: 调度系统角色
+    permissions: []
+    # 推断：系统参与者角色，无权限码（不经过 Shiro 授权链）。
+    # 其行为边界由 sys_job 定义与白名单校验控制，见 m3-rule-model.yaml 的
+    # RULE-JOB-INVOKE-TARGET-WHITELIST / RULE-JOB-CRON-VALID
+
+  - roleId: ROLE-SYSTEM-GATEWAY
+    name: 网关系统角色
+    permissions: []
+    # 推断：系统参与者角色，无权限码。其可执行动作包括：
+    #   读取 open_api / open_app / open_app_api（只读）、写入 open_call_log（无条件追加）、
+    #   按 open_api.target_url 与 timeout_ms 发起出站转发
+
+  - roleId: ROLE-ANONYMOUS
+    name: 匿名会话角色
+    permissions: []
+    # 推断：未认证会话角色，仅可访问 Shiro anon 白名单路径；
+    # 无任何后端权限码，登录页、注册页与图形验证码是其可达边界
+    # 证据：ShiroConfig 第 306-334 行 anon 白名单；未授权出口 shiro.user.unauthorizedUrl=/unauth
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 权限（Permission）
+#
+# 本节逐个登记 72 个权限标识：
+#   A. 55 个「源码注解权限码」—— 由 @RequiresPermissions 声明，逐条抄录自
+#      source-asset-inventory.md 第 6 节「权限码登记（逐个权限码）」；
+#   B. 16 个「菜单声明权限码」—— open:* 系列，只存在于 sql/open_api_menu.sql 的 sys_menu.perms，
+#      代码中无对应注解，逐条登记并标注 `# 待确认`；
+#   C. 1 个「网关调用权限」—— PERM-OPEN-GATEWAY-INVOKE，非 Shiro 权限码，
+#      用于表达第三方应用身份的授权边界（应用状态 + 有效期 + 接口授权 + 签名），属建模补充项 ｜ # 推断。
+# 每条权限的注释给出对账五要素：权限码 ｜ 资源 ｜ 动作 ｜ 所属菜单 ｜ 授予角色。
+# dataScope 说明：BEHAVIOR/ENTITY 目标上的数据范围；本系统仅有 3 个聚合的列表查询被
+#   @DataScope 切面增强（用户列表、角色列表、部门列表/树），故这三个资源上的查询类权限
+#   取 CUSTOM 并给出与 sys_role.data_scope（1/2/3/4/5）等价的 ABAC 条件，其余取 ALL。
+# ══════════════════════════════════════════════════════════════════════════════
+permissions:
+
+  # ── 用户管理（system:user，菜单目录 1 → 菜单 100，按钮 1000~1006） ────────────
+  - permissionId: PERM-SYS-USER-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: ALL
+    # 权限码 system:user:view ｜ 资源 用户 ｜ 动作 查看用户管理菜单 ｜ 所属菜单 100（用户管理，C，父 1 系统管理）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-USER-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: CUSTOM
+    abacCondition: "actor.isAdmin == true OR role.dataScope == '1' OR (role.dataScope == '2' AND resource.deptId IN role.roleDeptIds) OR (role.dataScope == '3' AND resource.deptId == actor.deptId) OR (role.dataScope == '4' AND (resource.deptId == actor.deptId OR resource.ancestors CONTAINS actor.deptId)) OR (role.dataScope == '5' AND resource.userId == actor.userId)"
+    # 权限码 system:user:list ｜ 资源 用户 ｜ 动作 查询列表 ｜ 所属菜单 1000（用户查询，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 证据：SysUserServiceImpl.selectUserList 标注 @DataScope(deptAlias="d", userAlias="u")；
+    # SysUserController.list / export 均走该查询，故导出同样受数据范围约束
+  - permissionId: PERM-SYS-USER-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: ALL
+    # 权限码 system:user:add ｜ 资源 用户 ｜ 动作 新增 ｜ 所属菜单 1001（用户新增，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-USER-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: DEPT
+    abacCondition: "actor.isAdmin == true OR resource.deptId IN actor.visibleDeptIds"
+    # 权限码 system:user:edit ｜ 资源 用户 ｜ 动作 修改（含角色分配与状态变更） ｜ 所属菜单 1002（用户修改，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 证据：SysUserController.insertAuthRole / changeStatus 均先调用
+    # checkUserDataScope（非 admin 时以 selectUserList 判断目标用户是否在可见范围内，否则抛「没有权限访问用户数据！」）
+  - permissionId: PERM-SYS-USER-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: DEPT
+    abacCondition: "actor.isAdmin == true OR resource.deptId IN actor.visibleDeptIds"
+    # 权限码 system:user:remove ｜ 资源 用户 ｜ 动作 删除 ｜ 所属菜单 1003（用户删除，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 附加约束：目标为 admin（userId=1）或当前登录用户自身时被拒绝（见 m1 不变性）
+  - permissionId: PERM-SYS-USER-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: CUSTOM
+    abacCondition: "actor.isAdmin == true OR role.dataScope == '1' OR (role.dataScope == '2' AND resource.deptId IN role.roleDeptIds) OR (role.dataScope == '3' AND resource.deptId == actor.deptId) OR (role.dataScope == '4' AND (resource.deptId == actor.deptId OR resource.ancestors CONTAINS actor.deptId)) OR (role.dataScope == '5' AND resource.userId == actor.userId)"
+    # 权限码 system:user:export ｜ 资源 用户 ｜ 动作 导出 Excel ｜ 所属菜单 1004（用户导出，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-USER-IMPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: ALL
+    # 权限码 system:user:import ｜ 资源 用户 ｜ 动作 导入 Excel 与下载模板 ｜ 所属菜单 1005（用户导入，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-USER-RESET-PWD
+    targetType: ENTITY
+    targetRef: AGG-SYS-USER-001
+    dataScope: DEPT
+    abacCondition: "actor.isAdmin == true OR resource.deptId IN actor.visibleDeptIds"
+    # 权限码 system:user:resetPwd ｜ 资源 用户 ｜ 动作 重置密码 ｜ 所属菜单 1006（重置密码，F，父 100）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 角色管理（system:role，菜单 101，按钮 1007~1011） ────────────────────────
+  - permissionId: PERM-SYS-ROLE-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: ALL
+    # 权限码 system:role:view ｜ 资源 角色 ｜ 动作 查看角色管理菜单 ｜ 所属菜单 101（角色管理，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-ROLE-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: CUSTOM
+    abacCondition: "actor.isAdmin == true OR role.dataScope == '1' OR (role.dataScope == '2' AND resource.deptId IN role.roleDeptIds) OR (role.dataScope == '3' AND resource.deptId == actor.deptId) OR (role.dataScope == '4' AND (resource.deptId == actor.deptId OR resource.ancestors CONTAINS actor.deptId))"
+    # 权限码 system:role:list ｜ 资源 角色 ｜ 动作 查询列表 ｜ 所属菜单 1007（角色查询，F，父 101）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 证据：SysRoleServiceImpl.selectRoleList 标注 @DataScope(deptAlias="d")；角色无「仅本人」语义，
+    # 故等价条件中不含 dataScope='5' 分支
+  - permissionId: PERM-SYS-ROLE-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: ALL
+    # 权限码 system:role:add ｜ 资源 角色 ｜ 动作 新增 ｜ 所属菜单 1008（角色新增，F，父 101）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-ROLE-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: DEPT
+    abacCondition: "actor.isAdmin == true OR resource.deptId IN actor.visibleDeptIds"
+    # 权限码 system:role:edit ｜ 资源 角色 ｜ 动作 修改（含菜单勾选与数据范围授权） ｜ 所属菜单 1009（角色修改，F，父 101）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 证据：SysRoleController 修改/授权入口先调用 checkRoleDataScope；checkRoleAllowed 拒绝操作 super admin 角色
+  - permissionId: PERM-SYS-ROLE-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: DEPT
+    abacCondition: "actor.isAdmin == true OR resource.deptId IN actor.visibleDeptIds"
+    # 权限码 system:role:remove ｜ 资源 角色 ｜ 动作 删除 ｜ 所属菜单 1010（角色删除，F，父 101）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-ROLE-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-ROLE-001
+    dataScope: CUSTOM
+    abacCondition: "actor.isAdmin == true OR role.dataScope == '1' OR (role.dataScope == '2' AND resource.deptId IN role.roleDeptIds) OR (role.dataScope == '3' AND resource.deptId == actor.deptId) OR (role.dataScope == '4' AND (resource.deptId == actor.deptId OR resource.ancestors CONTAINS actor.deptId))"
+    # 权限码 system:role:export ｜ 资源 角色 ｜ 动作 导出 Excel ｜ 所属菜单 1011（角色导出，F，父 101）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 菜单管理（system:menu，菜单 102，按钮 1012~1015） ────────────────────────
+  - permissionId: PERM-SYS-MENU-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-MENU-001
+    dataScope: ALL
+    # 权限码 system:menu:view ｜ 资源 菜单 ｜ 动作 查看菜单管理菜单 ｜ 所属菜单 102（菜单管理，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-MENU-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-MENU-001
+    dataScope: ALL
+    # 权限码 system:menu:list ｜ 资源 菜单 ｜ 动作 查询菜单树 ｜ 所属菜单 1012（菜单查询，F，父 102）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-MENU-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-MENU-001
+    dataScope: ALL
+    # 权限码 system:menu:add ｜ 资源 菜单 ｜ 动作 新增 ｜ 所属菜单 1013（菜单新增，F，父 102）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-MENU-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-MENU-001
+    dataScope: ALL
+    # 权限码 system:menu:edit ｜ 资源 菜单 ｜ 动作 修改 ｜ 所属菜单 1014（菜单修改，F，父 102）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-MENU-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-MENU-001
+    dataScope: ALL
+    # 权限码 system:menu:remove ｜ 资源 菜单 ｜ 动作 删除 ｜ 所属菜单 1015（菜单删除，F，父 102）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 附加约束：存在子菜单或菜单已分配角色时被拒绝（见 m1 不变性）
+
+  # ── 部门管理（system:dept，菜单 103，按钮 1016~1019） ────────────────────────
+  - permissionId: PERM-SYS-DEPT-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-DEPT-001
+    dataScope: ALL
+    # 权限码 system:dept:view ｜ 资源 部门 ｜ 动作 查看部门管理菜单 ｜ 所属菜单 103（部门管理，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DEPT-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-DEPT-001
+    dataScope: CUSTOM
+    abacCondition: "actor.isAdmin == true OR role.dataScope == '1' OR (role.dataScope == '2' AND resource.deptId IN role.roleDeptIds) OR (role.dataScope == '3' AND resource.deptId == actor.deptId) OR (role.dataScope == '4' AND (resource.deptId == actor.deptId OR resource.ancestors CONTAINS actor.deptId))"
+    # 权限码 system:dept:list ｜ 资源 部门 ｜ 动作 查询部门树 ｜ 所属菜单 1016（部门查询，F，父 103）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 证据：SysDeptServiceImpl.selectDeptList / selectDeptTree / selectDeptTreeExcludeChild 均标注 @DataScope(deptAlias="d")
+  - permissionId: PERM-SYS-DEPT-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-DEPT-001
+    dataScope: ALL
+    # 权限码 system:dept:add ｜ 资源 部门 ｜ 动作 新增 ｜ 所属菜单 1017（部门新增，F，父 103）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DEPT-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-DEPT-001
+    dataScope: ALL
+    # 权限码 system:dept:edit ｜ 资源 部门 ｜ 动作 修改 ｜ 所属菜单 1018（部门修改，F，父 103）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DEPT-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-DEPT-001
+    dataScope: ALL
+    # 权限码 system:dept:remove ｜ 资源 部门 ｜ 动作 删除 ｜ 所属菜单 1019（部门删除，F，父 103）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 附加约束：存在下级部门或部门下存在用户时被拒绝（见 m1 不变性）
+
+  # ── 岗位管理（system:post，菜单 104，按钮 1020~1024） ────────────────────────
+  - permissionId: PERM-SYS-POST-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:view ｜ 资源 岗位 ｜ 动作 查看岗位管理菜单 ｜ 所属菜单 104（岗位管理，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-POST-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:list ｜ 资源 岗位 ｜ 动作 查询列表 ｜ 所属菜单 1020（岗位查询，F，父 104）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-POST-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:add ｜ 资源 岗位 ｜ 动作 新增 ｜ 所属菜单 1021（岗位新增，F，父 104）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-POST-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:edit ｜ 资源 岗位 ｜ 动作 修改 ｜ 所属菜单 1022（岗位修改，F，父 104）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-POST-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:remove ｜ 资源 岗位 ｜ 动作 删除 ｜ 所属菜单 1023（岗位删除，F，父 104）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-POST-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-POST-001
+    dataScope: ALL
+    # 权限码 system:post:export ｜ 资源 岗位 ｜ 动作 导出 Excel ｜ 所属菜单 1024（岗位导出，F，父 104）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 字典管理（system:dict，菜单 105，按钮 1025~1029） ────────────────────────
+  - permissionId: PERM-SYS-DICT-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:view ｜ 资源 字典类型 ｜ 动作 查看字典管理菜单 ｜ 所属菜单 105（字典管理，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 说明：字典菜单同时覆盖字典类型与字典数据两个聚合，权限码本身不区分二者
+  - permissionId: PERM-SYS-DICT-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:list ｜ 资源 字典类型 / 字典数据 ｜ 动作 查询列表 ｜ 所属菜单 1025（字典查询，F，父 105）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DICT-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:add ｜ 资源 字典类型 / 字典数据 ｜ 动作 新增 ｜ 所属菜单 1026（字典新增，F，父 105）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DICT-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:edit ｜ 资源 字典类型 / 字典数据 ｜ 动作 修改 ｜ 所属菜单 1027（字典修改，F，父 105）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-DICT-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:remove ｜ 资源 字典类型 / 字典数据 ｜ 动作 删除 ｜ 所属菜单 1028（字典删除，F，父 105）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 附加约束：字典类型下存在字典项时被拒绝（见 m1 不变性）
+  - permissionId: PERM-SYS-DICT-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-DICTTYPE-001
+    dataScope: ALL
+    # 权限码 system:dict:export ｜ 资源 字典类型 / 字典数据 ｜ 动作 导出 Excel ｜ 所属菜单 1029（字典导出，F，父 105）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 参数设置（system:config，菜单 106，按钮 1030~1034） ──────────────────────
+  - permissionId: PERM-SYS-CONFIG-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:view ｜ 资源 参数配置 ｜ 动作 查看参数设置菜单 ｜ 所属菜单 106（参数设置，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-CONFIG-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:list ｜ 资源 参数配置 ｜ 动作 查询列表 ｜ 所属菜单 1030（参数查询，F，父 106）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-CONFIG-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:add ｜ 资源 参数配置 ｜ 动作 新增 ｜ 所属菜单 1031（参数新增，F，父 106）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-CONFIG-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:edit ｜ 资源 参数配置 ｜ 动作 修改（含刷新缓存） ｜ 所属菜单 1032（参数修改，F，父 106）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-CONFIG-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:remove ｜ 资源 参数配置 ｜ 动作 删除 ｜ 所属菜单 1033（参数删除，F，父 106）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 附加约束：config_type='Y' 的内置参数不可删除（见 m1 不变性）
+  - permissionId: PERM-SYS-CONFIG-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-CONFIG-001
+    dataScope: ALL
+    # 权限码 system:config:export ｜ 资源 参数配置 ｜ 动作 导出 Excel ｜ 所属菜单 1034（参数导出，F，父 106）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 通知公告（system:notice，菜单 107，按钮 1035~1038） ──────────────────────
+  - permissionId: PERM-SYS-NOTICE-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-NOTICE-001
+    dataScope: ALL
+    # 权限码 system:notice:view ｜ 资源 通知公告 ｜ 动作 查看通知公告菜单 ｜ 所属菜单 107（通知公告，C，父 1）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-NOTICE-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-NOTICE-001
+    dataScope: ALL
+    # 权限码 system:notice:list ｜ 资源 通知公告 ｜ 动作 查询列表 ｜ 所属菜单 1035（公告查询，F，父 107）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-NOTICE-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-NOTICE-001
+    dataScope: ALL
+    # 权限码 system:notice:add ｜ 资源 通知公告 ｜ 动作 新增 ｜ 所属菜单 1036（公告新增，F，父 107）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+  - permissionId: PERM-SYS-NOTICE-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-NOTICE-001
+    dataScope: ALL
+    # 权限码 system:notice:edit ｜ 资源 通知公告 ｜ 动作 修改 ｜ 所属菜单 1037（公告修改，F，父 107）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+    # 说明：公告正文为富文本，XSS 过滤将 /system/notice/* 显式排除（xss.excludes）
+  - permissionId: PERM-SYS-NOTICE-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-NOTICE-001
+    dataScope: ALL
+    # 权限码 system:notice:remove ｜ 资源 通知公告 ｜ 动作 删除 ｜ 所属菜单 1038（公告删除，F，父 107）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-SYS-ADMIN
+
+  # ── 定时任务（monitor:job，菜单 110，按钮 1050~1056） ────────────────────────
+  - permissionId: PERM-JOB-VIEW
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:view ｜ 资源 定时任务 ｜ 动作 查看定时任务菜单 ｜ 所属菜单 110（定时任务，C，父 1，来源 sql/quartz.sql）
+    # 授予角色 ROLE-ADMIN、ROLE-COMMON、ROLE-AUDITOR
+    # 对账更正：# 待确认——functional-inventory.md 将 FUNC-job-manage 的「菜单入口」登记为 none，
+    #   但 sql/quartz.sql 第 190-194 行确实创建并更新了菜单 110（url=/monitor/job，perms=monitor:job:view）；
+    #   差异原因推断为菜单资产抽取时未收录 quartz.sql（menus.json 仅覆盖 5 份方言副本），
+    #   即该菜单被元模型遗漏。本模型以源码为准，登记菜单 110 存在 ｜ # 推断
+  - permissionId: PERM-JOB-LIST
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:list ｜ 资源 定时任务 ｜ 动作 查询列表 ｜ 所属菜单 1050（任务查询，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR；ROLE-COMMON 未获授该按钮（quartz.sql 仅授权 role 1、2 的 menu 110）
+  - permissionId: PERM-JOB-ADD
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:add ｜ 资源 定时任务 ｜ 动作 新增（含 Cron 校验与调用目标白名单校验） ｜ 所属菜单 1051（任务新增，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR（审计角色按最小权限原则可自行裁剪）
+  - permissionId: PERM-JOB-EDIT
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:edit ｜ 资源 定时任务 ｜ 动作 修改（含 Cron 校验与调用目标白名单校验） ｜ 所属菜单 1052（任务修改，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR
+  - permissionId: PERM-JOB-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:remove ｜ 资源 定时任务 ｜ 动作 删除 ｜ 所属菜单 1053（任务删除，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR
+  - permissionId: PERM-JOB-CHANGE-STATUS
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:changeStatus ｜ 资源 定时任务 ｜ 动作 状态变更（正常/暂停，影响 Quartz 调度） ｜ 所属菜单 1054（状态修改，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR
+  - permissionId: PERM-JOB-DETAIL
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:detail ｜ 资源 定时任务 ｜ 动作 查看详情 ｜ 所属菜单 1055（任务详细，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR
+  - permissionId: PERM-JOB-EXPORT
+    targetType: ENTITY
+    targetRef: AGG-SYS-JOB-001
+    dataScope: ALL
+    # 权限码 monitor:job:export ｜ 资源 定时任务 ｜ 动作 导出 Excel ｜ 所属菜单 1056（任务导出，F，父 110）
+    # 授予角色 ROLE-ADMIN、ROLE-AUDITOR
+    # 说明：调度日志查询（SysJobLogController /monitor/jobLog/**）复用本组权限码，无独立权限码 ｜ # 推断
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # B. 菜单声明权限码（open:* 系列，16 个）
+  #
+  # 【现状】这 16 个权限码只存在于菜单 SQL：
+  #   - open-api/sql/open_api_menu.sql 第 8-26 行（sys_menu.perms）
+  #   - open-api/deploy/local-docker/mysql/init/40-open-api-menu.sql
+  #   - open-api/deploy/local-docker/postgres/init/40-open-api-menu.sql
+  #   Java 源码与前端模板对 open:* 的引用数为 0，即后端从不校验这些权限码。
+  # 【授权现状】open_api_menu.sql 第 28-62 行把菜单 2100~2150 写给了 role_id=1（admin）
+  #   与 role_id=2（common），因此低权限的普通角色同样持有全部 open:* 权限码。
+  # 【目标】按最小权限原则，这些权限码应由后端 @RequiresPermissions 强制校验，
+  #   且不应默认授予 common 角色。逐条标注 `# 待确认`。
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ── 应用管理（open:app，菜单 2101，按钮 2110~2113） ──────────────────────────
+  - permissionId: PERM-OPEN-APP-VIEW
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:app:view ｜ 资源 开放应用 ｜ 动作 查看应用管理菜单 ｜ 所属菜单 2101（应用管理，C，父 2100 OpenAPI管理）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-APP-LIST
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:app:list ｜ 资源 开放应用 ｜ 动作 查询列表 ｜ 所属菜单 2110（应用查询，F，父 2101）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+    # 对应端点 POST /admin/open/app/list（OpenAppController.list，仅 @Log 审计，无权限注解）
+  - permissionId: PERM-OPEN-APP-ADD
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:app:add ｜ 资源 开放应用 ｜ 动作 新增（自动生成 appKey/appSecret） ｜ 所属菜单 2111（应用新增，F，父 2101）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-APP-EDIT
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:app:edit ｜ 资源 开放应用 ｜ 动作 修改（含重置密钥 resetSecret） ｜ 所属菜单 2112（应用修改，F，父 2101）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+    # 风险：resetSecret 属于凭据轮换动作，当前仅靠 @Log 留痕，未做权限校验
+  - permissionId: PERM-OPEN-APP-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:app:remove ｜ 资源 开放应用 ｜ 动作 删除（级联删除 open_app_api） ｜ 所属菜单 2113（应用删除，F，父 2101）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+
+  # ── 接口管理（open:api，菜单 2102，按钮 2120~2123） ──────────────────────────
+  - permissionId: PERM-OPEN-API-VIEW
+    targetType: ENTITY
+    targetRef: AGG-OPEN-API-001
+    dataScope: ALL
+    # 权限码 open:api:view ｜ 资源 开放接口 ｜ 动作 查看接口管理菜单 ｜ 所属菜单 2102（接口管理，C，父 2100）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-API-LIST
+    targetType: ENTITY
+    targetRef: AGG-OPEN-API-001
+    dataScope: ALL
+    # 权限码 open:api:list ｜ 资源 开放接口 ｜ 动作 查询列表 ｜ 所属菜单 2120（接口查询，F，父 2102）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-API-ADD
+    targetType: ENTITY
+    targetRef: AGG-OPEN-API-001
+    dataScope: ALL
+    # 权限码 open:api:add ｜ 资源 开放接口 ｜ 动作 新增（登记对外路径与转发目标） ｜ 所属菜单 2121（接口新增，F，父 2102）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+    # 最高风险动作：新增 open_api 记录并配合 need_sign=0 即可制造无需凭据的匿名对外转发入口
+  - permissionId: PERM-OPEN-API-EDIT
+    targetType: ENTITY
+    targetRef: AGG-OPEN-API-001
+    dataScope: ALL
+    # 权限码 open:api:edit ｜ 资源 开放接口 ｜ 动作 修改（可改 target_url / need_sign / status / timeout_ms） ｜ 所属菜单 2122（接口修改，F，父 2102）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-API-REMOVE
+    targetType: ENTITY
+    targetRef: AGG-OPEN-API-001
+    dataScope: ALL
+    # 权限码 open:api:remove ｜ 资源 开放接口 ｜ 动作 删除（级联删除 open_app_api） ｜ 所属菜单 2123（接口删除，F，父 2102）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+
+  # ── 授权管理（open:auth，菜单 2103，按钮 2130） ──────────────────────────────
+  - permissionId: PERM-OPEN-AUTH-VIEW
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:auth:view ｜ 资源 应用-接口授权 ｜ 动作 查看授权管理菜单 ｜ 所属菜单 2103（授权管理，C，父 2100）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-AUTH-SAVE
+    targetType: ENTITY
+    targetRef: AGG-OPEN-APP-001
+    dataScope: ALL
+    # 权限码 open:auth:save ｜ 资源 应用-接口授权 ｜ 动作 保存授权（覆盖式先删后插） ｜ 所属菜单 2130（授权保存，F，父 2103）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+    # 授权变更即时影响网关运行期判定（hasPermission 直查 open_app_api），属高影响动作
+
+  # ── 调用日志（open:log，菜单 2104，按钮 2140） ──────────────────────────────
+  - permissionId: PERM-OPEN-LOG-VIEW
+    targetType: ENTITY
+    targetRef: AGG-OPEN-CALLLOG-001
+    dataScope: ALL
+    # 权限码 open:log:view ｜ 资源 开放接口调用日志 ｜ 动作 查看调用日志菜单 ｜ 所属菜单 2104（调用日志，C，父 2100）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN、ROLE-AUDITOR
+    # ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-LOG-LIST
+    targetType: ENTITY
+    targetRef: AGG-OPEN-CALLLOG-001
+    dataScope: ALL
+    # 权限码 open:log:list ｜ 资源 开放接口调用日志 ｜ 动作 查询列表 / 当日统计 / CSV 导出 ｜ 所属菜单 2140（日志查询，F，父 2104）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN、ROLE-AUDITOR
+    # ｜ # 待确认：后端无 @RequiresPermissions
+    # 对应端点 POST /admin/open/log/list、GET /admin/open/log/stats、GET /admin/open/log/exportCsv
+    # 说明：这是本系统唯一可用的网关审计只读入口（操作/登录审计无端点）
+
+  # ── 文档管理（open:doc，菜单 2105，按钮 2150） ──────────────────────────────
+  - permissionId: PERM-OPEN-DOC-VIEW
+    targetType: ENTITY
+    targetRef: AGG-OPEN-DOC-001
+    dataScope: ALL
+    # 权限码 open:doc:view ｜ 资源 接口文档 ｜ 动作 查看文档管理菜单 ｜ 所属菜单 2105（文档管理，C，父 2100）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+  - permissionId: PERM-OPEN-DOC-GENERATE
+    targetType: ENTITY
+    targetRef: AGG-OPEN-DOC-001
+    dataScope: ALL
+    # 权限码 open:doc:generate ｜ 资源 接口文档 ｜ 动作 生成 / 预览 / 下载文档 ｜ 所属菜单 2150（文档生成，F，父 2105）
+    # 授予角色 现状 ROLE-ADMIN、ROLE-COMMON；目标 ROLE-OPEN-ADMIN ｜ # 待确认：后端无 @RequiresPermissions
+    # 对应端点 POST /admin/open/doc/generate、GET /admin/open/doc/html/{apiId}、GET /admin/open/doc/download
+
+  # ── 网关调用（非菜单权限，用于描述第三方应用身份的授权边界） ────────────────
+  - permissionId: PERM-OPEN-GATEWAY-INVOKE
+    targetType: ENTITY
+    targetRef: AGG-OPEN-CALLLOG-001
+    dataScope: CUSTOM
+    abacCondition: "app.status == '1' AND (app.expireTime == NULL OR app.expireTime > NOW()) AND EXISTS(OpenAppApi WHERE appId == app.sId AND apiId == api.sId) AND (api.needSign == '0' OR signatureValid(request, app.appSecret))"
+    # 权限码 无（非 Shiro 权限码，网关不使用 @RequiresPermissions） ｜ 资源 开放接口网关 ｜ 动作 调用 /open/** 代理转发
+    # 所属菜单 无（第三方应用不经过后台菜单） ｜ 授予主体 ACTOR-THIRD-APP（经 ROLE-OPEN-CLIENT）
+    # 证据：OpenApiSecurityService.authenticate 的八步校验（见文末权限缺口说明第 3 条）
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 权限缺口建模说明（现状 vs 目标的差异登记）
+#
+# 本节是「如实登记逆向结果」的必备内容：下列差异不是建模遗漏，而是**存量系统的真实缺口**，
+# 逐条给出证据、现状、目标与影响，供后续治理排期使用。所有差异项均标注 `# 待确认`。
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 1. 端点级权限码覆盖率：184 个对外端点中 79 个无权限码
+#    【现状·事实】interface-index.md 共 195 个接口节点（184 个对外端点 + 11 个非端点节点）；
+#      其中 105 个端点带 @RequiresPermissions（common-capability-index.md 记为「语义化端点 105 个带权限注解」），
+#      184 − 105 = 79 个端点**完全依赖 Shiro 的 /** -> user 兜底链**（仅要求已登录，不要求任何权限码）。
+#    【口径说明】# 待确认：该 79 的口径在元模型内部存在两处不一致——
+#      ① interface-index.md 总览表漏登 3 个节点并重复登记 4 个 ID；
+#      ② 源码实际存在 200 个方法级映射，其中 17 个空路径 @XxxMapping() 页面映射（含全部 5 个
+#         /admin/open/* 模块首页）未被元模型登记，按源码口径无权限码端点应为 85（200 口径下为 90）。
+#      本模型采用元模型口径 79（184 口径），并在 M3 中同时登记该口径差异。
+#
+# 2. com.qvsu.open 包的管理端点全部无权限码（核心缺口）
+#    【现状·事实】com.qvsu.open.controller 共 7 个控制器，@RequiresPermissions 出现次数 = 0：
+#      - OpenAppController       /admin/open/app      8 个端点（含 resetSecret）
+#      - OpenApiMgrController    /admin/open/api      8 个端点（含 add/edit/remove）
+#      - OpenAuthController      /admin/open/auth     5 个端点（含 save 覆盖式授权）
+#      - OpenLogController       /admin/open/log      4 个端点（含 exportCsv）
+#      - OpenDocController       /admin/open/doc      6 个端点（含 generate/download）
+#      - OpenGatewayController   /open/**             1 个端点（网关入口，有意不设权限码，改用网关鉴权）
+#      - OpenSelftestHttpbinController /selftest/**   9 个端点（自检专用，Shiro 亦为 anon）
+#      即 5 个管理控制器共 31 个管理端点 + 网关 1 + 自检 9 = 41 个端点零权限码。
+#    【口径说明】# 待确认：任务书描述为「7 个 Controller 的 36 个管理端点」，与本次逐文件清点
+#      得到的 41（或仅计 5 个管理控制器时的 31）不一致；差异可能来自是否计入自检控制器、
+#      以及空路径页面映射的计数方式。本模型以逐文件清点结果为准并保留该差异登记。
+#    【现状·授权】open:* 共 16 个权限码只存在于 3 份菜单 SQL
+#      （sql/open_api_menu.sql、deploy/local-docker/mysql|postgres/init/40-open-api-menu.sql），
+#      Java 源码与前端模板中对 open:* 的引用数为 0。
+#    【现状·授予】open_api_menu.sql 第 28-62 行把菜单 2100~2150（17 个 ID）同时授予
+#      role_id=1（role_key='admin'）与 role_id=2（role_key='common'），
+#      即最低权限的普通角色也持有全部 open:* 权限码。
+#    【目标】① 为 5 个管理控制器的端点补齐 @RequiresPermissions（新增/修改/删除/授权保存等
+#      写操作为必补项，尤其是 open:api:add / open:api:edit / open:app:edit(resetSecret) / open:auth:save）；
+#      ② 将 open:* 从 common 角色收回，改为仅授予 ROLE-OPEN-ADMIN；
+#      ③ 空的 @XxxMapping() 页面映射（5 个模块首页）纳入接口清单并登记权限码。
+#    【影响·风险链】权限码被授予普通角色但后端零校验 + /open/** 在 Shiro 中为 anon +
+#      open_api.need_sign=0 时网关跳过全部校验
+#      → 低权限登录用户即可改写 open_api 表，制造一个无需任何凭据即可对外匿名转发的入口。
+#
+# 3. 网关不做 Shiro 授权，改用自有八步鉴权（有意为之，非缺口，但权限语义需对齐）
+#    【现状·事实】ShiroConfig 第 333 行 /open/** -> anon，认证与授权完全由 OpenApiFilter +
+#      OpenApiSecurityService 承担，顺序为：
+#      ① 按 api_path + method 查 open_api（status=1）→ 未命中抛 40004
+#      ② need_sign=0 时**跳过全部校验**，appName 置为 anonymous
+#      ③ X-App-Key / X-Timestamp / X-Nonce / X-Sign 四头缺一即抛 40001
+#      ④ 时间戳与服务器时差 > 5 分钟抛 40002
+#      ⑤ 按 app_key 查 open_app（status=1 且未过期）→ 失败抛 40001
+#      ⑥ nonce 去重（key=appKey+':'+nonce，TTL 5 分钟）→ 重复抛 40005
+#      ⑦ open_app_api 授权校验 → 无授权抛 40004
+#      ⑧ HmacSHA256 签名比对（忽略大小写）→ 不匹配抛 40003
+#      失败一律以 HTTP 200 + OpenResult.fail(code,msg) 返回（OpenApiFilter 第 152 行 setStatus(200)）。
+#    【目标】保持现有网关鉴权（不改协议），但补两项：need_sign=0 的接口应列入审核清单
+#      （当前等价于无条件匿名开放），以及 nonce 目前为单 JVM ConcurrentHashMap，
+#      多实例部署下重放保护失效。
+#
+# 4. 审计数据只写不读：三张审计表无查询端点与菜单（含元模型内部矛盾登记）
+#    【现状·事实】源码 com.qvsu.web.controller.system 下**不存在** SysOperLogController /
+#      SysLogininforController / SysUserOnlineController（逐文件清点 Sys*Controller 共 16 个，其中 system 包
+#      12 个，均无上述三类）；全量扫描源码，monitor:operlog:* / monitor:logininfor:* / monitor:online:*
+#      三类权限码的 @RequiresPermissions **零命中**；
+#      open_api_menu.sql 第 82-90 行显式删除这三组菜单与角色授权，即审计能力在界面上不可用，只能数据库直查。
+#    【补充事实】在线用户强制下线能力只到服务层：ISysUserOnlineService.forceLogout(String sessionId) 与
+#      SysUserOnlineServiceImpl.forceLogout 存在，但**没有任何控制器端点暴露它**，
+#      故「强制下线」当前无界面与 HTTP 入口 ｜ # 推断：该能力为框架预留，未随菜单裁剪一并移除。
+#    【元模型内部矛盾】# 待确认——functional-inventory.md 登记了 FUNC-sys-operlog-query、
+#      FUNC-sys-logininfor-query、FUNC-sys-useronline-query 三个功能（触发类型 api-only、交互方式
+#      non-interactive、菜单入口 none），并在其「功能边界」中声称三者分别以
+#      monitor:operlog:* / monitor:logininfor:* / monitor:online:* 权限码为前提开始执行；
+#      但上述源码证据表明这三个功能**既无端点亦无权限码**，
+#      即该三条功能登记在当前代码基线上不可实现（属性为「目标态」而非「现状」）。
+#      本模型以源码为准：这三个功能不计入权限登记表，仅在此登记矛盾，供后续对账修正元模型。
+#    【目标】ROLE-AUDITOR 的权限集合当前只能覆盖 monitor:job:* 与 open:log:*；
+#      补齐审计查询端点后应为 ROLE-AUDITOR 增加 operlog / logininfor / online 三组权限码，
+#      并为 forceLogout 增加受控端点（建议权限码 monitor:online:forceLogout）。
+#
+# 5. 会话与登录相关权限缺口
+#    【现状·事实】/selftest/** 为 anon（ShiroConfig 第 334 行），OpenSelftestHttpbinController
+#      9 个端点（含 /selftest/httpbin/timeout）无需任何认证，源码中无环境判断。
+#    【目标】自检端点应在非开发环境关闭或改为需认证；当前对匿名访问者（ACTOR-ANONYMOUS）
+#      的可达边界中不应包含 /selftest/**。
+#
+# 6. 数据范围只覆盖 3 个聚合
+#    【现状·事实】@DataScope 注解仅出现在 7 个方法上（用户 3、角色 1、部门 3），
+#      开放平台域 5 张表、调度域、审计域均无数据范围过滤。
+#    【目标】开放平台域若引入多组织隔离，需为 open_app / open_call_log 等增加归属维度与切面标注。
+#      当前 ROLE-OPEN-ADMIN 的 dataScope 建议为 ALL（无组织维度可过滤）。
+# ══════════════════════════════════════════════════════════════════════════════

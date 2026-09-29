@@ -1,0 +1,10 @@
+.git
+.gitignore
+.idea
+.vscode
+**/target
+**/logs
+**/*.log
+D:/data
+bin/openapi_selftest_result.txt
+bin/*.tmp

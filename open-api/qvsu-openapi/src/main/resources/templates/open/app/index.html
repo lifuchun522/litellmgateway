@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <th:block th:include="include :: header('Open应用管理')" />
+</head>
+<body class="gray-bg">
+<div class="container-div">
+    <div class="row">
+        <div class="col-sm-12 search-collapse">
+            <form id="app-form">
+                <div class="select-list">
+                    <ul>
+                        <li>应用名称：<input type="text" name="appName"/></li>
+                        <li>appKey：<input type="text" name="appKey"/></li>
+                        <li>
+                            状态：
+                            <select name="status">
+                                <option value="">全部</option>
+                                <option value="1">启用</option>
+                                <option value="0">禁用</option>
+                            </select>
+                        </li>
+                        <li>
+                            <a class="btn btn-primary btn-rounded btn-sm" onclick="$.table.search()"><i class="fa fa-search"></i>&nbsp;搜索</a>
+                            <a class="btn btn-warning btn-rounded btn-sm" onclick="$.form.reset()"><i class="fa fa-refresh"></i>&nbsp;重置</a>
+                        </li>
+                    </ul>
+                </div>
+            </form>
+        </div>
+
+        <div class="btn-group-sm" id="toolbar" role="group">
+            <a class="btn btn-success" onclick="$.operate.add()"><i class="fa fa-plus"></i> 新增</a>
+            <a class="btn btn-primary single disabled" onclick="$.operate.edit()"><i class="fa fa-edit"></i> 修改</a>
+            <a class="btn btn-danger multiple disabled" onclick="$.operate.removeAll()"><i class="fa fa-remove"></i> 删除</a>
+        </div>
+
+        <div class="col-sm-12 select-table table-striped">
+            <table id="bootstrap-table"></table>
+        </div>
+    </div>
+</div>
+<th:block th:include="include :: footer" />
+<script th:inline="javascript">
+    var prefix = ctx + "admin/open/app";
+    $(function() {
+        var options = {
+            url: prefix + "/list",
+            createUrl: prefix + "/add",
+            updateUrl: prefix + "/edit/{id}",
+            removeUrl: prefix + "/remove",
+            modalName: "开放应用",
+            columns: [{ checkbox: true },
+                { field: 'id', title: 'ID' },
+                { field: 'appName', title: '应用名称' },
+                { field: 'appKey', title: 'AppKey' },
+                { field: 'contact', title: '联系人' },
+                { field: 'status', title: '状态', formatter: function(v){ return v == 1 ? '<span class="label label-primary">启用</span>' : '<span class="label label-danger">禁用</span>'; }},
+                { field: 'expireTime', title: '过期时间' },
+                { field: 'createTime', title: '创建时间' },
+                { title: '操作', align: 'center', formatter: function(value, row) {
+                    var actions = [];
+                    actions.push('<a class="btn btn-success btn-xs" href="javascript:void(0)" onclick="$.operate.edit(\'' + row.id + '\')"><i class="fa fa-edit"></i>编辑</a> ');
+                    actions.push('<a class="btn btn-danger btn-xs" href="javascript:void(0)" onclick="$.operate.remove(\'' + row.id + '\')"><i class="fa fa-remove"></i>删除</a> ');
+                    actions.push('<a class="btn btn-warning btn-xs" href="javascript:void(0)" onclick="resetSecret(' + row.id + ')"><i class="fa fa-key"></i>重置密钥</a>');
+                    return actions.join('');
+                }}]
+        };
+        $.table.init(options);
+    });
+
+    function resetSecret(id) {
+        $.modal.confirm("确认重置密钥吗？", function () {
+            $.post(prefix + "/resetSecret", {id: id}, function (result) {
+                if (result.code === 0) {
+                    $.modal.alertSuccess("新密钥：" + result.data);
+                    $.table.refresh();
+                } else {
+                    $.modal.alertError(result.msg || "重置失败");
+                }
+            });
+        });
+    }
+</script>
+</body>
+</html>

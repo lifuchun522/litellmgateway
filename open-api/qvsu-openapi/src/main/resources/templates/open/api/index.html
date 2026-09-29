@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <th:block th:include="include :: header('Open接口管理')" />
+</head>
+<body class="gray-bg">
+<div class="container-div">
+    <div class="row">
+        <div class="col-sm-12 search-collapse">
+            <form id="api-form"><div class="select-list"><ul>
+                <li>接口名称：<input type="text" name="apiName"/></li>
+                <li>开放路径：<input type="text" name="apiPath"/></li>
+                <li>状态：<select name="status"><option value="">全部</option><option value="1">启用</option><option value="0">禁用</option></select></li>
+                <li><a class="btn btn-primary btn-rounded btn-sm" onclick="$.table.search()"><i class="fa fa-search"></i>&nbsp;搜索</a><a class="btn btn-warning btn-rounded btn-sm" onclick="$.form.reset()"><i class="fa fa-refresh"></i>&nbsp;重置</a></li>
+            </ul></div></form>
+        </div>
+        <div class="btn-group-sm" id="toolbar" role="group">
+            <a class="btn btn-success" onclick="$.operate.add()"><i class="fa fa-plus"></i> 新增</a>
+            <a class="btn btn-primary single disabled" onclick="$.operate.edit()"><i class="fa fa-edit"></i> 修改</a>
+            <a class="btn btn-danger multiple disabled" onclick="$.operate.removeAll()"><i class="fa fa-remove"></i> 删除</a>
+        </div>
+        <div class="col-sm-12 select-table table-striped"><table id="bootstrap-table"></table></div>
+    </div>
+</div>
+<th:block th:include="include :: footer" />
+<script th:inline="javascript">
+    var prefix = ctx + "admin/open/api";
+    $(function() {
+        $.table.init({
+            url: prefix + "/list",
+            createUrl: prefix + "/add",
+            updateUrl: prefix + "/edit/{id}",
+            removeUrl: prefix + "/remove",
+            modalName: "开放接口",
+            columns: [{ checkbox: true },
+
+
+                { field: 'id', title: 'ID' },
+                { field: 'apiName', title: '接口名称' },
+                { field: 'apiPath', title: '开放路径' },
+                { field: 'method', title: '方法' },
+                { field: 'targetUrl', title: '目标地址' },
+                { field: 'timeoutMs', title: '超时(ms)' },
+                { field: 'needSign', title: '签名', formatter: function(v){ return v == 1 ? '是' : '否'; }},
+                { field: 'status', title: '状态', formatter: function(v){ return v == 1 ? '启用' : '禁用'; }},
+                { title: '请求示例(cURL)', align: 'center', width: 140, formatter: function(value, row) {
+                    return '<a class="btn btn-info btn-xs" href="javascript:void(0)" onclick="showCurl(\'' + row.id + '\')"><i class="fa fa-code"></i> 查看</a>';
+                }},
+                { title: '操作', align: 'center', formatter: function(value, row) {
+                    return '<a class="btn btn-success btn-xs" href="javascript:void(0)" onclick="$.operate.edit(\'' + row.id + '\')"><i class="fa fa-edit"></i>编辑</a> ' +
+                           '<a class="btn btn-danger btn-xs" href="javascript:void(0)" onclick="$.operate.remove(\'' + row.id + '\')"><i class="fa fa-remove"></i>删除</a>';
+                }}]
+        });
+    });
+
+    function showCurl(apiId) {
+        $.get(prefix + '/curl/' + apiId, function(res) {
+            if (!res || res.code !== 0) {
+                $.modal.alertError((res && res.msg) || '获取cURL示例失败');
+                return;
+            }
+            var text = $.common.nullToStr(res.data);
+            if (!text) {
+                text = $.common.nullToStr(res.msg);
+            }
+            openCurlLayer(text || '暂无示例');
+        }).fail(function() {
+
+            $.modal.alertError('获取cURL示例失败');
+        });
+    }
+
+    function openCurlLayer(text) {
+        var escaped = $('<div/>').text($.common.nullToStr(text)).html();
+        top.layer.open({
+            type: 1,
+            title: '请求示例(cURL)',
+            area: ['860px', '520px'],
+            shadeClose: true,
+            content: '<div style="padding: 12px;"><pre style="margin:0;background:#111827;color:#f3f4f6;border-radius:6px;padding:12px;white-space:pre-wrap;word-break:break-all;">' + escaped + '</pre></div>',
+            btn: ['复制', '关闭'],
+            yes: function(index) {
+                copyCurlText(text);
+                return false;
+            },
+            btn2: function(index) {
+                top.layer.close(index);
+            }
+        });
+    }
+
+    function copyCurlText(text) {
+        var $temp = $('<textarea readonly style="position:absolute;left:-9999px;top:-9999px;"></textarea>');
+        $('body').append($temp);
+        $temp.val(text).select();
+        try {
+            if (document.execCommand('copy')) {
+                top.layer.msg('cURL 已复制');
+                return;
+            }
+        } catch (e) {
+        } finally {
+            $temp.remove();
+        }
+        top.layer.alert('复制失败，请手动复制');
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,2234 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# M2 行为模型元文件 - m2-behavior-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务 · Spring Boot + MyBatis + Shiro + PostgreSQL）
+# 建模方式：基于已通过校验的逆向元模型（docs/meta-model/，25 份）正向表达本体语义，不新增业务
+# 主要素材：functional-inventory.md（32 个功能）、function-chain-index.md（实现主链 + 物理表 R/C/U/D）、
+#           flow-index.md（10 条端到端流程）、domain-model.md（33 个领域对象）、database-schema.md（34 张表）
+# 边界：本文件只定义行为语义（原子操作、前后置、权限、跨对象同步联动）；
+#       不重复定义对象（M1）、规则（M3）、角色权限主数据（M5）、查询对象（M7）、流程（M6）、界面（MU）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 一、triggerType 取值（严格按规范，不新增枚举） ────────────────────────────────
+# 规范 v9.0 §3.2.1：triggerType 仅允许 USER_ACTION（用户触发）/ SYSTEM（系统自动）两个取值。
+# 逆向元模型使用另一套触发词汇，映射关系如下（每个行为头注释保留逆向原值以便对照）：
+#   逆向 menu                              → USER_ACTION（有菜单入口的用户操作）
+#   逆向 api-only + interactive            → USER_ACTION（已登录用户经页面 AJAX 触发，但无独立菜单）
+#   逆向 api-only + non-interactive        → SYSTEM（无菜单、无页面交互，由 HTTP 端点直接调用）
+#   逆向 startup-lifecycle                 → SYSTEM（应用启动期由框架注册的处理能力）
+#   逆向 scheduled                         → SYSTEM（Quartz 按 Cron 调度触发）
+# 说明：逆向同时发现的"无菜单功能"（Quartz 调度执行、验证码、全局异常、网关调用、自检、日志查询）
+#       均落在 SYSTEM，本文件为其逐条建模，不遗漏。
+
+# ── 二、ownerEntity 对象引用约定（与 domain-model.md 对齐，采用规范 AGG-{对象}-{序号} 格式） ──
+# AGG-USER-001        用户 sys_user（聚合根，OBJ-SysUser）          AGG-ROLE-001       角色 sys_role（聚合根）
+# AGG-MENU-001        菜单 sys_menu（聚合根）                       AGG-DEPT-001       部门 sys_dept（聚合根）
+# AGG-POST-001        岗位 sys_post                                 AGG-DICT-TYPE-001  字典类型 sys_dict_type
+# AGG-DICT-DATA-001   字典数据 sys_dict_data                        AGG-CONFIG-001     参数 sys_config
+# AGG-NOTICE-001      通知公告 sys_notice                           AGG-OPER-LOG-001   操作日志 sys_oper_log
+# AGG-LOGININFOR-001  登录日志 sys_logininfor                       AGG-USER-ONLINE-001 在线会话 sys_user_online
+# AGG-USER-ROLE-001   用户-角色关联 sys_user_role                   AGG-USER-POST-001  用户-岗位关联 sys_user_post
+# AGG-ROLE-MENU-001   角色-菜单关联 sys_role_menu                   AGG-ROLE-DEPT-001  角色-部门关联 sys_role_dept
+# AGG-OPEN-APP-001    开放应用 open_app（聚合根）                    AGG-OPEN-API-001   开放接口 open_api（聚合根）
+# AGG-OPEN-APP-API-001 应用-接口授权 open_app_api                    AGG-OPEN-CALL-LOG-001 调用日志 open_call_log
+# AGG-OPEN-API-DOC-001 接口文档 open_api_doc                        AGG-JOB-001        定时任务 sys_job
+# AGG-JOB-LOG-001     调度日志 sys_job_log
+# OBJ-AjaxResult      统一响应载体（domain-model.md OBJ-AjaxResult，非持久化）
+# OBJ-OpenAuthContext 网关鉴权上下文（domain-model.md OBJ-OpenAuthContext，非持久化）
+# # 推断：M1 对象模型尚未产出，上述 ID 按"对象英文名 + 序号 001"约定预置，M1 建模时应沿用同一 ID。
+
+# ── 三、requiredPermissions 约定 ───────────────────────────────────────────────
+# 直接使用系统中真实存在的 Shiro 权限码字符串（来源：function-chain-index.md 各端点与
+# business-architecture.md 权限码表），M5 权限主数据以同一字符串作为 PERM 标识，避免二次映射失真。
+# 无权限码的端点（匿名例外或系统内部调用）写成 "无（匿名或系统内部）"。
+
+# ── 四、syncTriggers（同步联动）约定 ───────────────────────────────────────────
+# 规范 §3.2.2：syncTriggers 表达"源行为成功后同步调用另一个独立聚合上的下游行为"，可无条件或有条件（引 M3 规则）。
+# 本系统实现事实与规范语义的差异（逐条在 description 中标注）：
+#   ① 同一 Service 内的多表写入（@Transactional）实际同事务完成，本体层仍按"跨聚合联动"显式声明；
+#   ② 日志类写入（登录日志、操作日志、在线会话同步）实际由 AsyncManager 异步线程完成（事实），
+#      本体层仍声明为联动关系，并在 description 中注明"实现为异步、失败不阻断主流程"；
+#   ③ 系统中不存在统计表，"写调用日志 → 更新统计"无落点：调用统计由查询侧实时聚合
+#      （OpenManageService.queryLogStatsToday 单条 SQL 聚合 open_call_log）实现，
+#      故本文件不建立"写日志 → 更新统计"的 syncTrigger（见 OpenCallLog_Record 头注释）。
+
+# ── 五、QUERY 行为与 M7 的绑定 ────────────────────────────────────────────────
+# 规范 §3.4.5：queryReportRef 只出现在 behaviorType=QUERY 的行为上，并与 M7 behaviorRef 严格一对一。
+# 本系统的列表/详情/导出绝大多数为单聚合或单表查询（按 M7 规范 §7.2"单聚合简单查询可独立定义，
+# 不要求 M7"），故不预置 queryReportRef；跨对象的统计口径（调用日志 Top5 分组统计、用户-部门联合列表）
+# 的 M7 对象由 M7 模型侧定义后再行回填绑定，# 推断：不在本文件内臆造 M7 标识。
+
+model_type: BEHAVIOR
+version: "1.0"
+domain: "开放平台接口管理与网关服务"
+
+behaviors:
+  # ══════════════════════════════════════════════════════════════════════════
+  # A. DOM-system 系统管理域 · 认证与会话类（FUNC-sys-login / logout / captcha /
+  #    register / index / unauth / profile / profile-avatar）
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-sys-login（用户登录认证）｜逆向触发：menu（无菜单，登录页入口）｜
+  #    物理表：sys_user(R/U)、sys_config(R)、sys_menu(R)、sys_role(R)、sys_logininfor(C)、sys_user_online(C/U) ──
+  # 失败分支：验证码错误 → 用户名/密码为空 → 密码长度越界 → 用户名长度越界 → IP 黑名单命中 →
+  #           账号不存在 → 账号已删除(del_flag=2) → 账号停用(status=1) → 密码不符 → 重试次数超 user.password.maxRetryCount=5 锁定
+  # 事务边界：SysLoginService.login 与 SysPasswordService.validate 均未标注 @Transactional；
+  #           sys_user 登录信息更新与 sys_logininfor 异步写入各自独立提交
+  # 推断：密码重试计数存于进程内 Ehcache（ehcache-shiro.xml），重启清零、多实例不共享
+  - id: SysUser_Login
+    name: 用户登录认证
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "shiro.user.captchaEnabled=true 时验证码校验通过（验证码一次性，读取后立即失效）"
+      - "sys_user 中存在 login_name 对应且 del_flag='0' 的记录"
+      - "sys_user.status == '0'（未被停用）"
+      - "口令校验通过：Md5Hash(loginName + password + salt) 匹配"
+      - "登录 IP 未命中 sys_config 键 sys.login.blackIPList"
+      - "角色未被封禁（role.status='0'）"
+      - "密码错误累计次数未超过 user.password.maxRetryCount=5"
+    postconditions:
+      - field: "sys_user.login_ip / sys_user.login_date"
+        setValue: "写入本次登录 IP 与时间（仅保留最后一次，历史见 sys_logininfor）"
+      - field: "sys_logininfor"
+        setValue: "新增一条登录成功或失败记录（异步写入）"
+      - field: "session"
+        setValue: "建立 Shiro 会话（shiro.session.expireTime=30 分钟），授权缓存写入角色与权限集合"
+      - field: "sys_user_online"
+        setValue: "会话同步写入/更新在线用户记录"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers:
+      - behaviorRef: SysLogininfor_Record
+        description: "登录结果（成功/失败）均需落库登录日志；实现为 AsyncManager 异步调用 AsyncFactory.recordLogininfor（事实），异步失败不阻断登录主流程"
+      - behaviorRef: SysUserOnline_Sync
+        description: "会话创建后同步在线用户记录；实现为 OnlineSessionDAO + AsyncFactory.syncSessionToDb 异步同步（事实）"
+
+  # ── FUNC-sys-logout（用户退出登录）｜逆向触发：menu ｜
+  #    物理表：sys_user_online(D)、sys_logininfor(C) ──
+  # 失败分支：会话已过期时幂等返回登录页（不报错）
+  # 事务边界：Shiro 登出与异步日志写入不共享事务；会话删除与日志新增各自独立提交
+  - id: SysUserOnline_Logout
+    name: 用户退出登录
+    ownerEntity: AGG-USER-ONLINE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "存在有效 Shiro 会话（请求已通过 Shiro 过滤链）"
+    postconditions:
+      - field: "sys_user_online"
+        setValue: "删除当前会话对应的在线用户记录"
+      - field: "session"
+        setValue: "会话失效并清理授权缓存"
+      - field: "sys_logininfor"
+        setValue: "新增一条登出日志（异步写入）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers:
+      - behaviorRef: SysLogininfor_Record
+        description: "登出事件必须留痕；实现为 AsyncFactory.recordLogininfor 异步写 sys_logininfor（事实）"
+
+  # ── FUNC-sys-captcha（验证码生成）｜逆向触发：api-only（non-interactive）｜物理表：无（会话内） ──
+  # 失败分支：shiro.user.captchaEnabled=false 时返回说明性响应，不产生图片
+  # 事务边界：无持久化写入，会话属性写入不参与数据库事务
+  # 推断：验证码答案存于 Shiro 会话属性，会话经 OnlineSessionDAO 序列化后落到 sys_user_online，
+  #       故本行为的载体对象记为 AGG-USER-ONLINE-001（无独立验证码领域对象）
+  - id: SysCaptcha_Generate
+    name: 生成算数验证码
+    ownerEntity: AGG-USER-ONLINE-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "请求路径 /captcha/** 处于 Shiro anon 白名单（无需登录）"
+      - "shiro.user.captchaEnabled 为 true 时启用（当前配置 true，验证码类型 shiro.user.captchaType=math）"
+    postconditions:
+      - field: "session.captchaAnswer"
+        setValue: "写入算式答案（校验时读取后立即 removeAttribute，一次性使用）"
+      - field: "response.body"
+        setValue: "返回 {uuid, img}（Base64 图片）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-sys-register（用户注册）｜逆向触发：menu（/register 匿名可访问，受 sys.account.registerUser 控制）｜
+  #    物理表：sys_user(C) ──
+  # 失败分支：登录名已存在 → 验证码错误 → sys.account.registerUser=false 时拒绝注册
+  # 事务边界：SysRegisterService.registerUser 单表写入；未标注 @Transactional
+  - id: SysUser_Register
+    name: 自助注册用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "sys_config 键 sys.account.registerUser 为 true（允许注册）"
+      - "登录名在 sys_user 中唯一（del_flag='0' 范围内）"
+      - "验证码校验通过（过滤链 /register 配置为 anon,captchaValidate）"
+    postconditions:
+      - field: "sys_user"
+        setValue: "新增一行用户记录（del_flag='0'，密码加盐哈希后存储）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-sys-index（后台首页与工作台）｜逆向触发：menu ｜物理表：sys_menu(R)、sys_config(R)、sys_role(R) ──
+  # 失败分支：未登录跳转 /login；Ajax 请求返回 code=1 的"未登录或登录超时"提示
+  # 事务边界：纯只读渲染，无事务需求
+  # 分页：否（菜单树全量返回后由前端渲染）
+  # M7 绑定：单聚合（菜单树）简单查询，按 M7 规范 §7.2 不要求建立 M7 对象
+  - id: SysMenu_RenderIndex
+    name: 渲染后台首页与菜单树
+    ownerEntity: AGG-MENU-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "会话有效（Shiro /** 段 user 过滤）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-sys-unauth（未授权提示页）｜逆向触发：menu ｜物理表：无 ──
+  # 失败分支：无（页面自身不产生失败）；提示地址由 shiro.user.unauthorizedUrl=/unauth 指定
+  # 事务边界：无持久化，无事务
+  - id: SysIndex_ShowUnauth
+    name: 展示未授权提示
+    ownerEntity: OBJ-AjaxResult
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "本次访问触发了 AuthorizationException（权限码不满足）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-sys-profile（个人中心维护）｜逆向触发：menu ｜物理表：sys_user(R/U) ──
+  # 失败分支：原密码错误 → 手机号/邮箱唯一性冲突 → 密码长度不合法 → 非本人数据（只能改本人）
+  # 事务边界：SysUserServiceImpl.updateUser / resetUserPwd 单表明细写入；未标注 @Transactional（推断）
+  - id: SysUser_UpdateProfile
+    name: 维护个人资料与密码
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "会话有效且操作对象为当前登录用户本人（userId 取自 ShiroUtils.getSysUser()）"
+      - "修改密码时原密码校验通过（checkPassword）"
+      - "手机号、邮箱在 sys_user 中唯一"
+    postconditions:
+      - field: "sys_user"
+        setValue: "更新本人资料字段；修改密码时更新 password/salt 与 pwd_update_date"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-sys-profile-avatar（头像上传）｜逆向触发：menu ｜物理表：sys_user(U)（+文件系统） ──
+  # 失败分支：文件过大（spring.servlet.multipart.max-file-size=10MB）→ 扩展名不在白名单 → 磁盘写入失败
+  # 事务边界：文件落盘与 sys_user.avatar 更新不在同一事务（先落盘再更新字段）
+  - id: SysUser_UpdateAvatar
+    name: 上传并替换头像
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "会话有效"
+      - "文件大小与扩展名通过 FileUploadUtils 校验"
+    postconditions:
+      - field: "fileSystem"
+        setValue: "在 qvsu.profile 上传目录新增头像文件（不删除旧文件）"
+      - field: "sys_user.avatar"
+        setValue: "更新为头像访问路径"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # B. DOM-system 系统管理域 · 组织与权限主数据（FUNC-sys-user-manage /
+  #    role-manage / menu-manage / dept-manage / post-manage / dict-manage /
+  #    config-manage / notice-manage）
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-sys-user-manage（用户管理）｜逆向触发：menu（MENU-sys-user）｜
+  #    物理表：sys_user(R)、sys_dept(R)、sys_role(R)、sys_post(R) ──
+  # 失败分支：部门树过滤导致越权不可见 → 数据范围拼出 dept_id=0 时返回空集（非报错，事实）
+  # 事务边界：只读（@DataScope 仅拼接 params.dataScope 片段），无事务需求
+  # 分页：是（startPage + TableDataInfo，pagehelper.helperDialect=postgresql）
+  # M7 绑定：用户列表已跨 sys_user 与 sys_dept 对象，按 M7 规范由 M7 模型定义 LIST_QUERY 对象后回填 behaviorRef
+  - id: SysUser_QueryPage
+    name: 分页查询用户列表
+    ownerEntity: AGG-USER-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:list"
+      - "数据范围由 @DataScope（deptAlias='d'、userAlias='u'）过滤，多角色取并集、data_scope=1 时清空条件"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:user:list
+    syncTriggers: []
+
+  # ── FUNC-sys-user-manage（导出，端点 POST /system/user/export，权限 system:user:export）──
+  # 失败分支：无权限（AuthorizationException → code=500 或跳 error/unauth）；数据量过大时 Excel 内存溢出
+  # 事务边界：只读；分页：否（按当前筛选条件全量导出，POI Excel）
+  - id: SysUser_Export
+    name: 导出用户清单
+    ownerEntity: AGG-USER-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:user:export
+    syncTriggers: []
+
+  # ── FUNC-sys-user-manage（新增用户，端点 POST /system/user/add）｜物理表：sys_user(C)、sys_dept(R)、sys_role(R)、sys_post(R) ──
+  # 失败分支：登录名重复 → 手机号/邮箱重复 → 密码长度不合法 → 部门不存在
+  # 事务边界：SysUserServiceImpl.insertUser 标注 @Transactional（事实），用户主表与关联表同事务
+  - id: SysUser_Add
+    name: 新增用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:add"
+      - "登录名在 sys_user 中唯一（checkLoginNameUnique）"
+      - "手机号、邮箱唯一（checkPhoneUnique / checkEmailUnique）"
+      - "所引用的部门、角色、岗位均存在"
+    postconditions:
+      - field: "sys_user"
+        setValue: "新增一行用户记录（密码加盐哈希，create_by/create_time 由 ShiroUtils 与数据库填充）"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:add
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "提交用户时同步保存所选角色集合（跨聚合联动：用户 → 用户角色关联）；实现为 insertUser 内 deleteUserRoleByUserId + batchUserRole（事实，同事务）"
+      - behaviorRef: SysUserPost_Grant
+        description: "提交用户时同步保存所选岗位集合（跨聚合联动：用户 → 用户岗位关联）；实现为 insertUser 内 batchUserPost（事实，同事务）"
+
+  # ── FUNC-sys-user-manage（修改用户，端点 POST /system/user/edit）｜物理表：sys_user(U)、sys_dept(R)、sys_role(R)、sys_post(R) ──
+  # 失败分支：唯一性冲突 → 目标用户不存在（update 影响行数为 0）→ 越权修改超管账号
+  # 事务边界：updateUser 标注 @Transactional（事实）；# 事实：updateUser 会无条件重写 sys_user_role 与 sys_user_post
+  - id: SysUser_Edit
+    name: 修改用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:edit"
+      - "目标用户在 sys_user 中存在且 del_flag='0'"
+      - "登录名、手机号、邮箱唯一性校验通过"
+    postconditions:
+      - field: "sys_user"
+        setValue: "更新用户资料字段（动态 <set>，日志中会连带重写 login_ip/login_date）"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:edit
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "保存用户时同步重建其角色关联（跨聚合）；事实：无条件先删后插，会覆盖角色管理页授予的绑定"
+      - behaviorRef: SysUserPost_Grant
+        description: "保存用户时同步重建其岗位关联（跨聚合）；事实：无条件先删后插"
+
+  # ── FUNC-sys-user-manage（重置密码，端点 POST /system/user/resetPwd）｜物理表：sys_user(R/U) ──
+  # 失败分支：目标用户不存在 → 新密码长度不合法 → 无权限 monitor 级保护（需 system:user:resetPwd）
+  # 事务边界：resetUserPwd 单表更新；未标注 @Transactional（推断）
+  - id: SysUser_ResetPwd
+    name: 重置用户密码
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:resetPwd"
+      - "目标用户存在"
+      - "新密码长度在 UserConstants.PASSWORD_MIN_LENGTH ~ PASSWORD_MAX_LENGTH 之间"
+    postconditions:
+      - field: "sys_user.password / sys_user.salt / sys_user.pwd_update_date"
+        setValue: "写入新哈希口令与盐值并刷新改密日期"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:resetPwd
+    syncTriggers:
+      - behaviorRef: SysLogininfor_Record
+        description: "口令被重置属敏感管理动作，需留痕；# 推断：系统仅在登录/登出写 sys_logininfor，重置口令未单独记账（已知缺口）"
+
+  # ── FUNC-sys-user-manage（启用/停用，端点 POST /system/user/changeStatus）｜物理表：sys_user(U) ──
+  # 失败分支：目标用户不存在 → 停用超管账号被拒（框架保护）
+  # 事务边界：updateUserStatus 单表更新；未标注 @Transactional（推断）
+  - id: SysUser_ChangeStatus
+    name: 启用或停用用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:edit"
+      - "目标用户不是超管账号（admin 不可停用，推断）"
+    postconditions:
+      - field: "sys_user.status"
+        setValue: "'0'（正常）或 '1'（停用）；status='2' 在登录侧另作停用判定"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-user-manage（删除用户，端点 POST /system/user/remove）｜物理表：sys_user(U)、sys_user_role(D)、sys_user_post(D) ──
+  # 失败分支：目标为 admin 超管账号被拒 → 用户不存在
+  # 事务边界：deleteUserByIds 标注 @Transactional（事实）；逻辑删除主表 + 物理删除两张关联表
+  - id: SysUser_Remove
+    name: 删除用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:remove"
+      - "目标用户不是 admin 超管账号"
+    postconditions:
+      - field: "sys_user.del_flag"
+        setValue: "'2'（逻辑删除，系统无物理删除语句）"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:remove
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "删除用户时清理其角色关联（跨聚合，避免悬挂绑定）；实现为 deleteUserRoleByUserId（事实，同事务）"
+      - behaviorRef: SysUserPost_Grant
+        description: "删除用户时清理其岗位关联（跨聚合）；实现为 deleteUserPostByUserId（事实，同事务）"
+
+  # ── FUNC-sys-user-manage（分配角色，端点 POST /system/user/authRole/insertAuthRole）｜
+  #    物理表：sys_user_role(C/D)、sys_user(R)、sys_role(R) ──
+  # 失败分支：用户或角色不存在 → 无权限
+  # 事务边界：insertUserAuth 标注 @Transactional（事实）
+  - id: SysUser_AuthRole
+    name: 分配用户角色
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:edit"
+      - "应用户与角色均存在且未被删除"
+    postconditions:
+      - field: "userRoleBinding"
+        setValue: "用户角色绑定集合被替换为用户提交的角色集合"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:edit
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "授权保存后同步重建用户角色关联（跨聚合）；事实：先按 userId 全删再批量插入"
+
+  # ── FUNC-sys-user-manage（导入用户，端点 POST /system/user/importData）｜物理表：sys_user(C)、sys_role(R) ──
+  # 失败分支：Excel 解析失败 → 逐行唯一性/必填校验失败（导入结果带失败明细）→ 文件类型不合法
+  # 事务边界：importUser 内部按行调用 insertUser（@Transactional），整批未包在同一事务（推断：逐行提交）
+  - id: SysUser_Import
+    name: 批量导入用户
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:user:import"
+      - "上传文件为模板约定的 Excel 格式且大小在 multipart 限制内"
+    postconditions:
+      - field: "sys_user"
+        setValue: "按行新增用户记录，并回填导入成功/失败统计"
+    appliedRules: []
+    requiredPermissions:
+      - system:user:import
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "导入的用户若带角色列，则同步写入角色关联（跨聚合）；实现为 insertUser 的同一路径（事实）"
+
+  # ── FUNC-sys-role-manage（角色管理）｜逆向触发：menu（MENU-sys-role）｜物理表：sys_role(R)、sys_role_menu(R)、sys_role_dept(R)、sys_user_role(R) ──
+  # 失败分支：数据范围过滤（@DataScope deptAlias='d'）导致不可见 → 空集
+  # 事务边界：只读；分页：是（startPage + TableDataInfo）
+  # M7 绑定：单聚合（角色）列表查询，按 M7 规范 §7.2 不要求建立 M7 对象
+  - id: SysRole_QueryPage
+    name: 分页查询角色列表
+    ownerEntity: AGG-ROLE-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:role:list
+    syncTriggers: []
+
+  # ── FUNC-sys-role-manage（导出，端点 POST /system/role/export）──
+  # 失败分支：无权限；事务边界：只读；分页：否（全量导出）
+  - id: SysRole_Export
+    name: 导出角色清单
+    ownerEntity: AGG-ROLE-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:role:export
+    syncTriggers: []
+
+  # ── FUNC-sys-role-manage（新增角色，端点 POST /system/role/add）｜物理表：sys_role(C) ──
+  # 失败分支：角色名重复（checkRoleNameUnique）→ 权限字符重复（checkRoleKeyUnique）
+  # 事务边界：insertRole 标注 @Transactional（事实，事实：RoleServiceImpl 写角色与角色菜单同事务）
+  - id: SysRole_Add
+    name: 新增角色
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:add"
+      - "role_name 唯一、role_key 唯一"
+      - "data_scope 取值在 1~5（全部/自定义/本部门/本部门及以下/仅本人）"
+    postconditions:
+      - field: "sys_role"
+        setValue: "新增一行角色记录（del_flag='0'，status 缺省 '0'）"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:add
+    syncTriggers:
+      - behaviorRef: SysRoleMenu_Grant
+        description: "保存角色时同步勾选的菜单权限（跨聚合联动：角色 → 角色菜单关联）；实现为 insertRoleMenu（事实，同事务）"
+
+  # ── FUNC-sys-role-manage（修改角色，端点 POST /system/role/edit）｜物理表：sys_role(U) ──
+  # 失败分支：admin 角色不可修改（框架保护）→ 唯一性冲突
+  # 事务边界：updateRole 标注 @Transactional（事实）
+  - id: SysRole_Edit
+    name: 修改角色与菜单权限
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:edit"
+      - "目标角色不是 admin 角色"
+      - "角色名与权限字符唯一性校验通过"
+    postconditions:
+      - field: "sys_role"
+        setValue: "更新角色名称、权限字符、排序、状态与 data_scope"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:edit
+    syncTriggers:
+      - behaviorRef: SysRoleMenu_Grant
+        description: "保存角色时同步重建菜单权限（跨聚合）；事实：先按 roleId 全删 sys_role_menu 再批量插入，会覆盖角色管理页勾选结果"
+
+  # ── FUNC-sys-role-manage（数据范围授权，端点 POST /system/role/authDataScope）｜物理表：sys_role(U)、sys_role_dept(C/D) ──
+  # 失败分支：角色不存在 → data_scope 非法（不在 1~5）→ 自定义范围未提供部门集合
+  # 事务边界：authDataScope 标注 @Transactional（推断：与角色菜单写入同一 Service 事务边界）
+  - id: SysRole_AuthDataScope
+    name: 保存角色数据范围
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:edit"
+      - "目标角色存在"
+      - "data_scope 取值合法（1 全部 / 2 自定义 / 3 本部门 / 4 本部门及以下 / 5 仅本人）"
+    postconditions:
+      - field: "sys_role.data_scope"
+        setValue: "写入新的数据范围枚举值"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:edit
+    syncTriggers:
+      - behaviorRef: SysRoleDept_Grant
+        description: "仅在 data_scope=2（自定义）时同步保存所选部门集合（跨聚合联动：角色 → 角色部门关联），实现为先删后插 sys_role_dept（事实）；该条件为跨属性业务判断，# 推断：按 M3 判定应作为条件规则承载，系统内由 DataScopeAspect 运行期拼接实现，故此处以无条件联动 + 条件说明表达，不预置未确认的 ruleRef"
+
+  # ── FUNC-sys-role-manage（分配用户，端点 POST /system/role/authUser/selectAll 与 cancel）｜物理表：sys_user_role(C/D)、sys_user(R)、sys_role(R) ──
+  # 失败分支：用户或角色不存在 → 重复分配（唯一键冲突）
+  # 事务边界：角色用户授权写入标注 @Transactional（推断：与 SysUserServiceImpl 同一实现风格）
+  - id: SysRole_AuthUser
+    name: 角色分配用户
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:edit"
+      - "目标角色与目标用户均存在"
+    postconditions:
+      - field: "userRoleBinding"
+        setValue: "按角色维度新增或取消用户绑定关系"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:edit
+    syncTriggers:
+      - behaviorRef: SysUserRole_Grant
+        description: "角色侧的用户分配最终落到用户角色关联表（跨聚合联动：角色 → 用户角色关联）；事实：与用户管理页共享同一张 sys_user_role，双向写会互相覆盖"
+
+  # ── FUNC-sys-role-manage（启用/停用，端点 POST /system/role/changeStatus）｜物理表：sys_role(U) ──
+  # 失败分支：admin 角色不可停用；角色不存在
+  # 事务边界：单表更新，未标注 @Transactional（推断）
+  - id: SysRole_ChangeStatus
+    name: 启用或停用角色
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:edit"
+      - "目标角色不是 admin 角色"
+    postconditions:
+      - field: "sys_role.status"
+        setValue: "'0'（正常）或 '1'（停用）；停用后该角色用户登录触发 role.blocked 提示"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-role-manage（删除角色，端点 POST /system/role/remove）｜物理表：sys_role(U)、sys_role_menu(D)、sys_role_dept(D)、sys_user_role(R) ──
+  # 失败分支：角色已分配给用户被拒（deleteRoleByIds 前计数校验）→ admin 角色不可删
+  # 事务边界：deleteRoleByIds 标注 @Transactional（事实）
+  - id: SysRole_Remove
+    name: 删除角色
+    ownerEntity: AGG-ROLE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:role:remove"
+      - "该角色未被任何用户绑定（sys_user_role 计数为 0）"
+      - "目标角色不是 admin 角色"
+    postconditions:
+      - field: "sys_role.del_flag"
+        setValue: "'2'（逻辑删除）"
+    appliedRules: []
+    requiredPermissions:
+      - system:role:remove
+    syncTriggers:
+      - behaviorRef: SysRoleMenu_Grant
+        description: "删除角色时清理其菜单授权（跨聚合）；实现为 deleteRoleMenuByRoleId（事实，同事务）"
+      - behaviorRef: SysRoleDept_Grant
+        description: "删除角色时清理其数据范围部门集合（跨聚合）；实现为 deleteRoleDeptByRoleId（事实，同事务）"
+
+  # ── FUNC-sys-menu-manage（菜单管理）｜逆向触发：menu（MENU-sys-menu）｜物理表：sys_menu(R)、sys_role_menu(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：否（树形全量返回）
+  # M7 绑定：单聚合（菜单树）查询，按 M7 规范 §7.2 不要求建立 M7 对象
+  - id: SysMenu_QueryTree
+    name: 查询菜单树
+    ownerEntity: AGG-MENU-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:menu:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:menu:list
+    syncTriggers: []
+
+  # ── FUNC-sys-menu-manage（新增菜单，端点 POST /system/menu/add）｜物理表：sys_menu(C) ──
+  # 失败分支：菜单名称重复 → 权限码重复 → 父节点不存在
+  # 事务边界：insertMenu 单表写入；未标注 @Transactional（推断）
+  - id: SysMenu_Add
+    name: 新增菜单或按钮权限
+    ownerEntity: AGG-MENU-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:menu:add"
+      - "菜单名与权限码（perms）在 sys_menu 中唯一"
+      - "menu_type 取值 M（目录）/ C（菜单）/ F（按钮）"
+    postconditions:
+      - field: "sys_menu"
+        setValue: "新增一行菜单记录（url/perms/icon/order_num/visible/status）"
+    appliedRules: []
+    requiredPermissions:
+      - system:menu:add
+    syncTriggers: []
+
+  # ── FUNC-sys-menu-manage（修改菜单，端点 POST /system/menu/edit）｜物理表：sys_menu(U) ──
+  # 失败分支：权限码重复 → 自身作为父节点（成环）→ 目标菜单不存在
+  # 事务边界：updateMenu 单表写入；未标注 @Transactional（推断）
+  # # 推断：菜单/权限变更后需重新登录或清 Shiro 授权缓存（SYS_AUTH_CACHE）才生效，系统未在保存时主动清缓存
+  - id: SysMenu_Edit
+    name: 修改菜单或按钮权限
+    ownerEntity: AGG-MENU-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:menu:edit"
+      - "目标菜单存在"
+      - "权限码唯一、父子关系不成环"
+    postconditions:
+      - field: "sys_menu"
+        setValue: "更新菜单字段；权限码变更直接影响后端 @RequiresPermissions 判定"
+    appliedRules: []
+    requiredPermissions:
+      - system:menu:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-menu-manage（调整排序，端点 POST /system/menu/updateSort）｜物理表：sys_menu(U) ──
+  # 失败分支：菜单 ID 不存在；事务边界：updateMenuSort(String[], String[]) 标注 @Transactional（事实）
+  - id: SysMenu_UpdateSort
+    name: 调整菜单排序
+    ownerEntity: AGG-MENU-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（端点无独立权限码，事实）"
+      - "提交的菜单 ID 与排序值一一对应"
+    postconditions:
+      - field: "sys_menu.order_num"
+        setValue: "按提交顺序批量更新排序号"
+    appliedRules: []
+    requiredPermissions:
+      - system:menu:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-menu-manage（删除菜单，端点 GET /system/menu/remove/{menuId}）｜物理表：sys_menu(D)、sys_role_menu(R) ──
+  # 失败分支：存在子菜单或已被角色引用时被拒（业务校验）
+  # 事务边界：未标注 @Transactional（推断）
+  # 事实：deleteMenuById 为物理删除（delete from sys_menu where menu_id = ? or parent_id = ?），与 sys_user/sys_role 的逻辑删除口径不一致
+  # 事实：删除菜单不级联清理 sys_role_menu，会留下悬挂授权行（已知缺口，因此不声明清理型 syncTrigger）
+  - id: SysMenu_Remove
+    name: 删除菜单
+    ownerEntity: AGG-MENU-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:menu:remove"
+      - "该菜单无子节点且未被角色勾选"
+    postconditions:
+      - field: "sys_menu"
+        setValue: "物理删除该菜单行及其直接子行（menu_id = ? or parent_id = ?）"
+    appliedRules: []
+    requiredPermissions:
+      - system:menu:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-dept-manage（部门管理）｜逆向触发：menu（MENU-sys-dept）｜物理表：sys_dept(R)、sys_user(R) ──
+  # 失败分支：数据范围过滤（@DataScope deptAlias='d'）→ 空集；事务边界：只读；分页：否（树形）
+  - id: SysDept_QueryTree
+    name: 查询部门树
+    ownerEntity: AGG-DEPT-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dept:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:dept:list
+    syncTriggers: []
+
+  # ── FUNC-sys-dept-manage（新增部门，端点 POST /system/dept/add）｜物理表：sys_dept(C) ──
+  # 失败分支：部门名称在同级重复 → 父部门不存在
+  # 事务边界：insertDept 单表写入；未标注 @Transactional（推断）
+  - id: SysDept_Add
+    name: 新增部门
+    ownerEntity: AGG-DEPT-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dept:add"
+      - "同级部门名称唯一（checkDeptNameUnique）"
+      - "父部门存在且状态正常"
+    postconditions:
+      - field: "sys_dept"
+        setValue: "新增一行部门记录，并按父节点 ancestors 生成自身祖先链"
+    appliedRules: []
+    requiredPermissions:
+      - system:dept:add
+    syncTriggers: []
+
+  # ── FUNC-sys-dept-manage（修改部门，端点 POST /system/dept/edit）｜物理表：sys_dept(U) ──
+  # 失败分支：把自己或后代设为父节点（成环）→ 名称重复 → 目标不存在
+  # 事务边界：updateDept 标注 @Transactional（推断：需级联更新子节点 ancestors）
+  - id: SysDept_Edit
+    name: 修改部门
+    ownerEntity: AGG-DEPT-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dept:edit"
+      - "目标部门存在、父节点不构成环"
+    postconditions:
+      - field: "sys_dept.ancestors"
+        setValue: "级联更新本节点与其全部后代的祖先链，保证 find_in_set 数据范围过滤正确"
+    appliedRules: []
+    requiredPermissions:
+      - system:dept:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-dept-manage（删除部门，端点 GET /system/dept/remove/{deptId}）｜物理表：sys_dept(U/D)、sys_user(R) ──
+  # 失败分支：存在下级部门或已分配用户被拒
+  # 事务边界：deleteDeptById 单表写入；未标注 @Transactional（推断）
+  # # 推断：删除部门不级联清理 sys_role_dept，自定义数据范围可能残留失效部门（已知缺口，故不声明清理型 syncTrigger）
+  - id: SysDept_Remove
+    name: 删除部门
+    ownerEntity: AGG-DEPT-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dept:remove"
+      - "该部门无下级部门、无在册用户"
+    postconditions:
+      - field: "sys_dept.del_flag"
+        setValue: "'2'（逻辑删除）"
+    appliedRules: []
+    requiredPermissions:
+      - system:dept:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-post-manage（岗位管理）｜逆向触发：menu（MENU-sys-post）｜物理表：sys_post(R)、sys_user_post(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysPost_QueryPage
+    name: 分页查询岗位列表
+    ownerEntity: AGG-POST-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:post:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:post:list
+    syncTriggers: []
+
+  # ── FUNC-sys-post-manage（导出，端点 POST /system/post/export）──
+  # 失败分支：无权限；事务边界：只读；分页：否（全量导出）
+  - id: SysPost_Export
+    name: 导出岗位清单
+    ownerEntity: AGG-POST-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:post:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:post:export
+    syncTriggers: []
+
+  # ── FUNC-sys-post-manage（新增岗位，端点 POST /system/post/add）｜物理表：sys_post(C) ──
+  # 失败分支：岗位名称重复（checkPostNameUnique）→ 岗位编码重复（checkPostCodeUnique）
+  # 事务边界：insertPost 单表写入；未标注 @Transactional（推断）
+  - id: SysPost_Add
+    name: 新增岗位
+    ownerEntity: AGG-POST-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:post:add"
+      - "post_name 与 post_code 均唯一"
+    postconditions:
+      - field: "sys_post"
+        setValue: "新增一行岗位记录（status 缺省 '0'）"
+    appliedRules: []
+    requiredPermissions:
+      - system:post:add
+    syncTriggers: []
+
+  # ── FUNC-sys-post-manage（修改岗位，端点 POST /system/post/edit）｜物理表：sys_post(U) ──
+  # 失败分支：唯一性冲突；目标不存在；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysPost_Edit
+    name: 修改岗位
+    ownerEntity: AGG-POST-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:post:edit"
+      - "名称与编码唯一性校验通过"
+    postconditions:
+      - field: "sys_post"
+        setValue: "更新岗位名称、编码、排序与状态"
+    appliedRules: []
+    requiredPermissions:
+      - system:post:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-post-manage（删除岗位，端点 POST /system/post/remove）｜物理表：sys_post(D)、sys_user_post(R) ──
+  # 失败分支：已分配用户的岗位被拒；事务边界：deletePostByIds 单表删除，未标注 @Transactional（推断）
+  # # 推断：删除岗位后 sys_user_post 中可能残留绑定（Mapper 仅做反查校验，未见级联清理）
+  - id: SysPost_Remove
+    name: 删除岗位
+    ownerEntity: AGG-POST-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:post:remove"
+      - "该岗位未被任何用户绑定"
+    postconditions:
+      - field: "sys_post"
+        setValue: "删除岗位记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:post:remove
+    syncTriggers:
+      - behaviorRef: SysUserPost_Grant
+        description: "删除岗位后应清理用户岗位绑定（跨聚合）；# 事实：系统未见级联清理语句，保留本联动声明以暴露实现缺口"
+
+  # ── FUNC-sys-dict-manage（字典管理）｜逆向触发：menu（MENU-sys-dict）｜物理表：sys_dict_type(R)、sys_dict_data(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysDictType_QueryPage
+    name: 分页查询字典类型
+    ownerEntity: AGG-DICT-TYPE-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:view"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:view
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（字典数据列表，端点 POST /system/dict/data/list）｜物理表：sys_dict_data(R) ──
+  # 失败分支：dictType 不存在时返回空集；事务边界：只读；分页：是（按 dict_sort 排序分页）
+  - id: SysDictData_QueryList
+    name: 分页查询字典数据
+    ownerEntity: AGG-DICT-DATA-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:view"
+      - "所属字典类型存在"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:view
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（新增字典类型，端点 POST /system/dict/add）｜物理表：sys_dict_type(C) ──
+  # 失败分支：dict_type 重复（checkDictTypeUnique）；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysDictType_Add
+    name: 新增字典类型
+    ownerEntity: AGG-DICT-TYPE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:add"
+      - "dict_type 唯一"
+    postconditions:
+      - field: "sys_dict_type"
+        setValue: "新增一行字典类型记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:add
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（修改字典类型，端点 POST /system/dict/edit）｜物理表：sys_dict_type(U) ──
+  # 失败分支：类型重复、目标不存在；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysDictType_Edit
+    name: 修改字典类型
+    ownerEntity: AGG-DICT-TYPE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:edit"
+      - "目标字典类型存在且改后类型编码唯一"
+    postconditions:
+      - field: "sys_dict_type"
+        setValue: "更新字典类型编码、名称与备注"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:edit
+    syncTriggers:
+      - behaviorRef: SysDictData_QueryList
+        description: "字典类型编码变更会影响字典数据查询口径，需同步感知（跨聚合）；# 推断：系统未联动更新 sys_dict_data.dict_type，实际由管理员手工维护"
+
+  # ── FUNC-sys-dict-manage（删除字典类型，端点 POST /system/dict/remove）｜物理表：sys_dict_type(D)、sys_dict_data(R/D) ──
+  # 失败分支：类型已被字典数据引用（业务校验）；事务边界：deleteDictTypeByIds 未标注 @Transactional（推断）
+  - id: SysDictType_Remove
+    name: 删除字典类型
+    ownerEntity: AGG-DICT-TYPE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:remove"
+      - "该类型下无字典数据（或已确认级联删除）"
+    postconditions:
+      - field: "sys_dict_type"
+        setValue: "删除字典类型记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（新增字典数据，端点 POST /system/dict/data/add）｜物理表：sys_dict_data(C) ──
+  # 失败分支：所属字典类型不存在；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysDictData_Add
+    name: 新增字典数据
+    ownerEntity: AGG-DICT-DATA-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:add"
+      - "dict_type 指向已存在的字典类型"
+    postconditions:
+      - field: "sys_dict_data"
+        setValue: "新增一行字典项（dict_label/dict_value/dict_sort/status）"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:add
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（修改字典数据，端点 POST /system/dict/data/edit）｜物理表：sys_dict_data(U) ──
+  # 失败分支：目标不存在；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysDictData_Edit
+    name: 修改字典数据
+    ownerEntity: AGG-DICT-DATA-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:edit"
+      - "目标字典项存在"
+    postconditions:
+      - field: "sys_dict_data"
+        setValue: "更新字典项标签、值、排序与状态"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（删除字典数据，端点 POST /system/dict/data/remove）｜物理表：sys_dict_data(D) ──
+  # 失败分支：目标不存在；事务边界：单表删除，未标注 @Transactional（推断）
+  - id: SysDictData_Remove
+    name: 删除字典数据
+    ownerEntity: AGG-DICT-DATA-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:remove"
+    postconditions:
+      - field: "sys_dict_data"
+        setValue: "删除字典项记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-dict-manage（刷新缓存，端点 GET /system/dict/refreshCache）｜物理表：sys_dict_type(R)、sys_dict_data(R) ──
+  # 失败分支：无；事务边界：只读 + 重建进程内字典缓存（Ehcache/Redis 由配置决定）
+  - id: SysDict_CacheRefresh
+    name: 刷新字典缓存
+    ownerEntity: AGG-DICT-TYPE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:dict:remove（端点复用该权限码，事实）"
+    postconditions:
+      - field: "dictCache"
+        setValue: "清空并重载字典类型与字典数据缓存，使前端下拉框取到最新值"
+    appliedRules: []
+    requiredPermissions:
+      - system:dict:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（参数设置）｜逆向触发：menu（MENU-sys-config）｜物理表：sys_config(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysConfig_QueryPage
+    name: 分页查询参数列表
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:config:list
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（导出，端点 POST /system/config/export）──
+  # 失败分支：无权限；事务边界：只读；分页：否（全量导出）
+  - id: SysConfig_Export
+    name: 导出参数清单
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:config:export
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（新增参数，端点 POST /system/config/add）｜物理表：sys_config(C) ──
+  # 失败分支：config_key 重复（checkConfigKeyUnique）；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysConfig_Add
+    name: 新增参数
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:add"
+      - "config_key 唯一"
+    postconditions:
+      - field: "sys_config"
+        setValue: "新增一行参数记录（config_type Y/N 区分内置与自定义）"
+    appliedRules: []
+    requiredPermissions:
+      - system:config:add
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（修改参数，端点 POST /system/config/edit）｜物理表：sys_config(U) ──
+  # 失败分支：键重复、目标不存在；事务边界：单表写入，未标注 @Transactional（推断）
+  # # 推断：修改 sys.index.*、sys.login.blackIPList、sys.account.* 等键会即时影响登录页与首页渲染，系统未做运行期二次校验
+  - id: SysConfig_Edit
+    name: 修改参数
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:edit"
+      - "目标参数存在且键唯一"
+      - "内置参数（config_type='Y'）的键不允许改名（推断）"
+    postconditions:
+      - field: "sys_config"
+        setValue: "更新参数值与备注"
+    appliedRules: []
+    requiredPermissions:
+      - system:config:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（删除参数，端点 POST /system/config/remove）｜物理表：sys_config(D) ──
+  # 失败分支：内置参数（config_type='Y'）拒删；事务边界：单表删除，未标注 @Transactional（推断）
+  - id: SysConfig_Remove
+    name: 删除参数
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:remove"
+      - "目标参数为自定义参数（config_type='N'）"
+    postconditions:
+      - field: "sys_config"
+        setValue: "删除参数记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:config:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-config-manage（刷新缓存，端点 GET /system/config/refreshCache）｜物理表：sys_config(R) ──
+  # 失败分支：无；事务边界：只读 + 重建参数缓存
+  - id: SysConfig_CacheRefresh
+    name: 刷新参数缓存
+    ownerEntity: AGG-CONFIG-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:config:remove（端点复用该权限码，事实）"
+    postconditions:
+      - field: "configCache"
+        setValue: "清空并重载 sys_config 缓存，使 ConfigService.getKey 取到最新值"
+    appliedRules: []
+    requiredPermissions:
+      - system:config:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-notice-manage（通知公告）｜逆向触发：menu（MENU-sys-notice）｜物理表：sys_notice(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysNotice_QueryPage
+    name: 分页查询通知公告
+    ownerEntity: AGG-NOTICE-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:notice:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - system:notice:list
+    syncTriggers: []
+
+  # ── FUNC-sys-notice-manage（新增公告，端点 POST /system/notice/add）｜物理表：sys_notice(C) ──
+  # 失败分支：标题/内容超长；事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysNotice_Add
+    name: 新增通知公告
+    ownerEntity: AGG-NOTICE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:notice:add"
+      - "notice_type 取值 1（通知）/ 2（公告），status 取值 '0'（正常）/ '1'（关闭）"
+    postconditions:
+      - field: "sys_notice"
+        setValue: "新增公告记录（create_by 取当前登录用户）"
+    appliedRules: []
+    requiredPermissions:
+      - system:notice:add
+    syncTriggers: []
+
+  # ── FUNC-sys-notice-manage（修改公告，端点 POST /system/notice/edit）｜物理表：sys_notice(U) ──
+  # 失败分支：目标不存在；非本人创建且无管理权限（# 推断：系统未做创建人隔离）
+  # 事务边界：单表写入，未标注 @Transactional（推断）
+  - id: SysNotice_Edit
+    name: 修改通知公告
+    ownerEntity: AGG-NOTICE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:notice:edit"
+      - "目标公告存在"
+    postconditions:
+      - field: "sys_notice"
+        setValue: "更新公告标题、类型、内容与展示状态"
+    appliedRules: []
+    requiredPermissions:
+      - system:notice:edit
+    syncTriggers: []
+
+  # ── FUNC-sys-notice-manage（删除公告，端点 POST /system/notice/remove）｜物理表：sys_notice(D) ──
+  # 失败分支：目标不存在；事务边界：deleteNoticeByIds 单表删除，未标注 @Transactional（推断）
+  - id: SysNotice_Remove
+    name: 删除通知公告
+    ownerEntity: AGG-NOTICE-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 system:notice:remove"
+    postconditions:
+      - field: "sys_notice"
+        setValue: "删除公告记录"
+    appliedRules: []
+    requiredPermissions:
+      - system:notice:remove
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # C. DOM-system 系统管理域 · 无菜单的运维/审计查询类（FUNC-sys-operlog-query /
+  #    logininfor-query / useronline-query）；逆向触发均为 api-only（non-interactive）
+  #    → 本体触发类型 SYSTEM（本仓库已移除 monitor 菜单，端点由管理员直接调用）
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-sys-operlog-query（操作日志查询）｜逆向触发：api-only ｜物理表：sys_oper_log(R) ──
+  # 失败分支：无权限（monitor:operlog:view）；事务边界：只读；分页：是（startPage + TableDataInfo，按时间倒序）
+  - id: SysOperLog_QueryPage
+    name: 分页查询操作日志
+    ownerEntity: AGG-OPER-LOG-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:operlog:view"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:operlog:view
+    syncTriggers: []
+
+  # ── FUNC-sys-operlog-query（清理，端点 POST /monitor/operlog/clean 与 remove）｜物理表：sys_oper_log(D) ──
+  # 失败分支：无权限；事务边界：cleanOperLog 批量删除，未标注 @Transactional（推断）
+  # 事实：清空不可恢复，系统无归档机制（人工干预闭环由 DBA 备份承担）
+  - id: SysOperLog_Clean
+    name: 清空操作日志
+    ownerEntity: AGG-OPER-LOG-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:operlog:remove"
+    postconditions:
+      - field: "sys_oper_log"
+        setValue: "按勾选 ID 或全量清空删除审计记录（不可恢复）"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:operlog:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-logininfor-query（登录日志查询）｜逆向触发：api-only ｜物理表：sys_logininfor(R) ──
+  # 失败分支：无权限（monitor:logininfor:view）；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysLogininfor_QueryPage
+    name: 分页查询登录日志
+    ownerEntity: AGG-LOGININFOR-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:logininfor:view"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:logininfor:view
+    syncTriggers: []
+
+  # ── FUNC-sys-logininfor-query（清理，端点 POST /monitor/logininfor/clean 与 remove）｜物理表：sys_logininfor(D) ──
+  # 失败分支：无权限；事务边界：批量删除，未标注 @Transactional（推断）
+  - id: SysLogininfor_Clean
+    name: 清空登录日志
+    ownerEntity: AGG-LOGININFOR-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:logininfor:remove"
+    postconditions:
+      - field: "sys_logininfor"
+        setValue: "按勾选 ID 或全量清空删除登录记录"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:logininfor:remove
+    syncTriggers: []
+
+  # ── FUNC-sys-logininfor-query（账号解锁语义）｜物理表：sys_user(U)、sys_logininfor(R) ──
+  # 失败分支：目标账号不存在；事务边界：单表状态更新，未标注 @Transactional（推断）
+  # 事实：逆向元模型标注"支持账号解锁"，但对应菜单与端点已在 open-api/sql/open_api_menu.sql:64-90 中移除
+  # # 推断：解锁行为在本版本中可达性存疑，保留建模以保持与 FUNC 清单一致
+  - id: SysUser_Unlock
+    name: 解锁被停用账号
+    ownerEntity: AGG-USER-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:logininfor:view（逆向结论）"
+      - "目标账号 status='2'（被停用/锁定）"
+    postconditions:
+      - field: "sys_user.status"
+        setValue: "由 '2' 恢复为 '0'（正常）"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:logininfor:view
+    syncTriggers: []
+
+  # ── FUNC-sys-useronline-query（在线用户监控）｜逆向触发：api-only ｜物理表：sys_user_online(R) ──
+  # 失败分支：无权限（monitor:online:view）；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: SysUserOnline_QueryPage
+    name: 分页查询在线会话
+    ownerEntity: AGG-USER-ONLINE-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:online:view"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:online:view
+    syncTriggers: []
+
+  # ── FUNC-sys-useronline-query（强制下线，端点 POST /monitor/online/forceLogout 与 batchForceLogout）｜物理表：sys_user_online(D) ──
+  # 失败分支：目标会话已失效时幂等（不报错）；事务边界：通过 Shiro 会话管理器使会话失效，与数据库删除不在同一事务
+  - id: SysUserOnline_ForceLogout
+    name: 强制下线在线用户
+    ownerEntity: AGG-USER-ONLINE-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:online:forceLogout"
+      - "目标 sessionId 对应的在线记录存在"
+    postconditions:
+      - field: "sys_user_online"
+        setValue: "删除被强退会话的在线记录"
+      - field: "session"
+        setValue: "目标会话被置为失效，用户下次请求跳转 /login?kickout=1"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:online:forceLogout
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # D. 跨聚合联动目标行为（syncTriggers 的下游行为；本身也是可独立追踪的原子行为）
+  #    触发类型 SYSTEM：它们不由用户直接发起，而由上游行为同步（或异步，见 description）调用
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── 联动目标：操作日志落库（审计切面）｜物理表：sys_oper_log(C) ──
+  # 触发源清单（事实：flow-index.md 已确认的 @Log 使用位置）：OpenApp_Add / OpenApp_Edit / OpenApp_Remove、
+  #   OpenApi_Add / OpenApi_Edit / OpenApi_Remove（业务类型 INSERT/UPDATE/DELETE）。
+  #   # 推断：审计写入是 AOP 全局切面（LogAspect 匹配 @annotation(Log)），逐条在 6 个源行为上声明同义
+  #   syncTrigger 会产生 6 份重复语义，故在本行为头注释集中登记触发源；实现为 AsyncManager + AsyncFactory.recordOper。
+  # 失败分支：切面自身异常仅打日志（handleLog 全包 try/catch）→ 异步线程异常不回传主线程，日志可能静默丢失
+  # 事务边界：与业务事务完全解耦（独立线程 + 独立事务）：业务回滚时审计仍可能落库，业务成功时审计也可能缺失（事实）
+  # 审计盲区（事实）：OpenLogController / OpenAuthController / OpenDocController 的写操作未加 @Log，不产生审计记录
+  - id: SysOperLog_Record
+    name: 写入操作审计日志
+    ownerEntity: AGG-OPER-LOG-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "被调用的 Controller 方法标注 @Log(title, businessType)"
+      - "切面成功取到当前用户（ShiroUtils.getSysUser()）与 IP"
+    postconditions:
+      - field: "sys_oper_log"
+        setValue: "新增一行（title、business_type、method='类名.方法名()'、request_method、oper_name、dept_name、oper_url≤255、oper_ip、oper_location、oper_param≤2000、json_result≤2000、status、error_msg≤2000、cost_time）"
+      - field: "sys_oper_log.oper_param"
+        setValue: "password/oldPassword/newPassword/confirmPassword 等字段被 PropertyPreFilters 排除（事实）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：登录日志落库（上游：SysUser_Login / SysUserOnline_Logout）｜物理表：sys_logininfor(C) ──
+  # 实现事实：AsyncFactory.recordLogininfor 由 AsyncManager 定时器异步执行；异常被吞、不阻断主流程
+  # 对应 FUNC：FUNC-sys-login / FUNC-sys-logout 的实现链路第 6 步
+  - id: SysLogininfor_Record
+    name: 写入登录日志
+    ownerEntity: AGG-LOGININFOR-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为（登录/登出）已判定结果（成功或失败）"
+    postconditions:
+      - field: "sys_logininfor"
+        setValue: "新增一行记录（login_name、ipaddr、browser、os、status、msg、login_time）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：在线会话同步（上游：SysUser_Login）｜物理表：sys_user_online(C/U) ──
+  # 实现事实：OnlineSessionDAO + AsyncFactory.syncSessionToDb 异步把 Shiro 会话序列化写入在线表
+  # 对应 FUNC：FUNC-sys-login 的实现链路第 8 步
+  - id: SysUserOnline_Sync
+    name: 同步在线会话记录
+    ownerEntity: AGG-USER-ONLINE-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "Shiro 会话创建或变更事件触发（会话属性变化即触发同步）"
+    postconditions:
+      - field: "sys_user_online"
+        setValue: "按 sessionId 新增或更新在线记录（dept_name、login_name、ipaddr、browser、os、status、start_timestamp、last_access_time、expire_time）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：用户角色关联维护（上游：SysUser_Add / Edit / Remove / AuthRole / Import、SysRole_AuthUser）｜
+  #    物理表：sys_user_role(C/D) ──
+  # 失败分支：userId 不存在（无外键约束，事实：DDL 无 FOREIGN KEY）；重复插入由主键/唯一键拒绝
+  # 事务边界：与上游行为同事务（上游 @Transactional）；时机：事务内
+  - id: SysUserRole_Grant
+    name: 同步用户角色关联
+    ownerEntity: AGG-USER-ROLE-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为已确定目标用户与角色集合"
+      - "角色集合中的 roleId 均存在（系统未校验，事实：无外键）"
+    postconditions:
+      - field: "sys_user_role"
+        setValue: "先按 userId 全量删除再批量插入，最终绑定集合等于上游提交的角色集合"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：用户岗位关联维护（上游：SysUser_Add / Edit / Remove / Import、SysPost_Remove）｜物理表：sys_user_post(C/D) ──
+  # 失败分支：postId 不存在（无外键约束）；事务边界：与上游同事务；时机：事务内
+  - id: SysUserPost_Grant
+    name: 同步用户岗位关联
+    ownerEntity: AGG-USER-POST-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为已确定目标用户与岗位集合"
+    postconditions:
+      - field: "sys_user_post"
+        setValue: "先按 userId 全量删除再批量插入，最终绑定集合等于上游提交的岗位集合"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：角色菜单关联维护（上游：SysRole_Add / Edit / Remove）｜物理表：sys_role_menu(C/D)、sys_role(R)、sys_menu(R) ──
+  # 失败分支：roleId/menuId 不存在（无外键约束）；事务边界：与上游同事务；时机：事务内
+  # 事实：删除角色清理全部菜单授权行；菜单侧删除不回写本表（见 SysMenu_Remove 缺口说明）
+  - id: SysRoleMenu_Grant
+    name: 同步角色菜单关联
+    ownerEntity: AGG-ROLE-MENU-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为已确定角色与菜单勾选集合（或角色被删除）"
+    postconditions:
+      - field: "sys_role_menu"
+        setValue: "先按 roleId 全量删除再批量插入（或按角色删除清理）"
+      - field: "authorizationCache"
+        setValue: "角色权限变更后需清理 Shiro 授权缓存 SYS_AUTH_CACHE 才生效（# 推断：系统未在保存时主动清缓存）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：角色部门（数据范围）关联维护（上游：SysRole_AuthDataScope / SysRole_Remove）｜物理表：sys_role_dept(C/D) ──
+  # 失败分支：deptId 不存在（无外键约束）；事务边界：与上游同事务；时机：事务内
+  - id: SysRoleDept_Grant
+    name: 同步角色数据范围部门关联
+    ownerEntity: AGG-ROLE-DEPT-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为的 sys_role.data_scope 为 2（自定义）"
+      - "所选部门均存在于 sys_dept"
+    postconditions:
+      - field: "sys_role_dept"
+        setValue: "先按 roleId 全量删除再批量写入所选部门集合"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # E. DOM-common 平台公共域（FUNC-common-upload / common-download / global-exception）
+  #    三个功能均无持久化对象（domain-model.md：本功能不涉及持久化对象），
+  #    故 ownerEntity 记为无状态载体 OBJ-AjaxResult（统一响应 DTO），并在各行为内说明。
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-common-upload（通用文件上传）｜逆向触发：api-only（interactive，页面 AJAX）｜
+  #    物理表：无（仅文件系统）；本体触发类型 USER_ACTION（已登录用户经页面发起，无独立菜单） ──
+  # 失败分支：文件超大（max-file-size=10MB / max-request-size=20MB）→ 扩展名不在白名单（InvalidExtensionException）→
+  #           文件名超长 → 磁盘写入失败
+  # 事务边界：无事务；文件落盘与任何数据库写入无关（上传本身不写库）
+  # 幂等性：非幂等，同文件重复上传会产生多个物理文件
+  - id: FileResource_Upload
+    name: 上传文件
+    ownerEntity: OBJ-AjaxResult
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "会话有效（/common/** 落在 Shiro /** 段 user 过滤内，事实：无 @RequiresPermissions）"
+      - "文件大小在 spring.servlet.multipart 限制内"
+      - "扩展名通过 FileUploadUtils 校验（文件名重命名防目录穿越）"
+    postconditions:
+      - field: "fileSystem"
+        setValue: "在 QvsuConfig.getUploadPath()（qvsu.profile=D:/qvsu/uploadPath）下落盘新文件"
+      - field: "response.body"
+        setValue: "返回 AjaxResult，含 url（serverConfig.getUrl() + fileName）等信息"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-common-download（通用文件下载与资源读取）｜逆向触发：api-only（interactive）｜物理表：无 ──
+  # 失败分支：路径非法（checkAllowDownload 拒绝）→ 文件不存在 → 读流异常
+  # 事实：两个下载方法自身 try/catch 只写服务端日志，不向前端返回错误，浏览器可能收到空响应
+  # 事务边界：无事务；delete=true 时为"读后删"，重复调用第二次失败（非幂等）
+  - id: FileResource_Download
+    name: 下载文件或读取本地资源
+    ownerEntity: OBJ-AjaxResult
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "会话有效（/common/** 需登录）"
+      - "fileName / resource 通过 FileUtils.checkAllowDownload 路径校验"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-global-exception（全局异常统一处理）｜逆向触发：startup-lifecycle ｜物理表：无 ──
+  # 失败分支：异常处理器自身抛异常时退化为容器默认错误页
+  # 事务边界：无事务；发生在请求处理链之外（@ControllerAdvice），不改变任何业务事务语义
+  # 事实：把 Shiro AuthorizationException 分流为 Ajax code=500 或 ModelAndView("error/unauth")
+  - id: GlobalException_Handle
+    name: 统一转换全局异常响应
+    ownerEntity: OBJ-AjaxResult
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "应用启动完成且 GlobalExceptionHandler（@ControllerAdvice）已注册"
+      - "请求处理链抛出未被业务层捕获的异常"
+    postconditions:
+      - field: "response.body"
+        setValue: "AjaxResult.error(分类后的中文提示) 或 error/unauth 视图；不向外泄露堆栈"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # F. DOM-open 开放平台域（FUNC-open-app-manage / api-manage / auth-manage /
+  #    log-query / doc-manage / gateway-invoke / selftest）
+  #    事实：com.qvsu.open 包下 7 个 Controller 均无 @RequiresPermissions，
+  #    本文件保留菜单侧权限码（open:*）以表达业务应有的权限边界，并逐条标注该事实。
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-open-app-manage（应用管理）｜逆向触发：menu（MENU-open-app）｜物理表：open_app(R)、open_api(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  # 事实：selectAppList 的 SELECT 列表包含 app_secret，页面直接展示明文密钥
+  - id: OpenApp_QueryPage
+    name: 分页查询接入应用
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且菜单可见（open:app:view 仅约束菜单可见性，未被代码校验，事实）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:app:view
+    syncTriggers: []
+
+  # ── FUNC-open-app-manage（新增应用，端点 POST /admin/open/app/add）｜物理表：open_app(C) ──
+  # 失败分支：app_key 唯一约束冲突（DDL：app_key VARCHAR(64) NOT NULL UNIQUE）→ 分组校验失败
+  # 事务边界：insertApp 标注 @Transactional（事实）
+  # 事实：服务端生成 appKey（ak_ + UUID 去横线前 16 位）与 appSecret（sk_ + UUID 去横线）；status 缺省 1
+  - id: OpenApp_Add
+    name: 登记接入应用
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 INSERT）"
+      - "应用名为必填且 appKey 唯一"
+    postconditions:
+      - field: "open_app"
+        setValue: "新增一行应用记录（app_name、app_key、app_secret、contact、status=1、expire_time）"
+    appliedRules: []
+    requiredPermissions:
+      - open:app:add
+    syncTriggers: []
+
+  # ── FUNC-open-app-manage（修改应用，端点 POST /admin/open/app/edit）｜物理表：open_app(U) ──
+  # 失败分支：应用不存在（update 影响行数为 0）→ 表单校验失败
+  # 事务边界：updateApp 未标注 @Transactional（事实）；事实：updateApp 不修改 app_key / app_secret
+  - id: OpenApp_Edit
+    name: 修改应用信息
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 UPDATE）"
+      - "目标应用存在（s_id 有效）"
+    postconditions:
+      - field: "open_app"
+        setValue: "更新 app_name、contact、status、expire_time、remark、update_time"
+    appliedRules: []
+    requiredPermissions:
+      - open:app:edit
+    syncTriggers: []
+
+  # ── FUNC-open-app-manage（重置密钥，端点 POST /admin/open/app/resetSecret）｜物理表：open_app(U) ──
+  # 失败分支：应用不存在 → resetSecret 内 update 影响行数为 0 时抛 RuntimeException("app not found")
+  # 事务边界：resetSecret 未标注 @Transactional（事实）；密钥泄露后必须重新分发，无历史密钥保留
+  - id: OpenApp_ResetSecret
+    name: 重置应用密钥
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录"
+      - "目标应用存在"
+    postconditions:
+      - field: "open_app.app_secret"
+        setValue: "写入新生成的 sk_ + UUID 密钥，旧密钥立即失效（调用方须同步更换）"
+    appliedRules: []
+    requiredPermissions:
+      - open:app:edit
+    syncTriggers: []
+
+  # ── FUNC-open-app-manage（删除应用，端点 POST /admin/open/app/remove）｜物理表：open_app(D)、open_app_api(D) ──
+  # 失败分支：应用不存在；事务边界：deleteAppByIds 标注 @Transactional（事实）
+  # 事实：删除顺序为"先删授权关联再删应用"，且 open_app_api 无外键约束
+  - id: OpenApp_Remove
+    name: 删除应用
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 DELETE）"
+      - "目标应用存在"
+    postconditions:
+      - field: "open_app"
+        setValue: "物理删除该应用行（s_id in (...)）"
+    appliedRules: []
+    requiredPermissions:
+      - open:app:remove
+    syncTriggers:
+      - behaviorRef: OpenAppApi_Sync
+        description: "删除应用时同步清理其接口授权（跨聚合联动：应用 → 应用接口授权）；实现为 delete from open_app_api where app_id in (...)（事实）"
+
+  # ── FUNC-open-api-manage（接口管理）｜逆向触发：menu（MENU-open-api）｜物理表：open_api(R)、open_app_api(R)、open_api_doc(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  # 说明：端点 GET /admin/open/api/curl/{id} 返回 cURL 调试串，属同一查询行为的加载后渲染（# 推断：不单独建立行为）
+  - id: OpenApi_QueryPage
+    name: 分页查询开放接口定义
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且菜单可见（open:api:view，未被代码校验，事实）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:api:view
+    syncTriggers: []
+
+  # ── FUNC-open-api-manage（新增接口，端点 POST /admin/open/api/add）｜物理表：open_api(C) ──
+  # 失败分支：api_path 唯一约束冲突 → 必填项缺失
+  # 事务边界：insertApi 标注 @Transactional（事实）
+  # 事实：method 缺省 POST、timeout_ms 缺省 5000、status 缺省 1、need_sign 缺省 1
+  - id: OpenApi_Add
+    name: 登记开放接口定义
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 INSERT）"
+      - "api_name 与 api_path 必填且 api_path 唯一（DDL：api_path UNIQUE）"
+      - "target_url 可达（运行期生效，登记时不校验，推断）"
+    postconditions:
+      - field: "open_api"
+        setValue: "新增一行接口定义（api_path、method、target_url、timeout_ms、need_sign、status、description、req_example、resp_example）"
+    appliedRules: []
+    requiredPermissions:
+      - open:api:add
+    syncTriggers: []
+
+  # ── FUNC-open-api-manage（修改接口，端点 POST /admin/open/api/edit）｜物理表：open_api(U) ──
+  # 失败分支：接口不存在；api_path 与既有记录冲突
+  # 事务边界：updateApi 未标注 @Transactional（事实）
+  # 事实：update_api 语句未更新 update_time（与 updateApp 不一致）
+  # 影响面：api_path / target_url / need_sign 三列直接决定网关路由、转发目标与是否强制签名
+  - id: OpenApi_Edit
+    name: 修改开放接口定义
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 UPDATE）"
+      - "目标接口存在"
+    postconditions:
+      - field: "open_api"
+        setValue: "更新接口名称、路径、方法、目标地址、超时、状态、签名开关与示例"
+      - field: "gatewayRuntime"
+        setValue: "下一次网关请求即时按新定义鉴权与转发（无缓存、无需重启）"
+    appliedRules: []
+    requiredPermissions:
+      - open:api:edit
+    syncTriggers: []
+
+  # ── FUNC-open-api-manage（删除接口，端点 POST /admin/open/api/remove）｜物理表：open_api(D)、open_app_api(D) ──
+  # 失败分支：接口不存在；事务边界：deleteApiByIds 标注 @Transactional（事实）
+  - id: OpenApi_Remove
+    name: 删除开放接口定义
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录（@Log 记录审计，业务类型 DELETE）"
+      - "目标接口存在"
+    postconditions:
+      - field: "open_api"
+        setValue: "物理删除接口定义（s_id in (...)）"
+    appliedRules: []
+    requiredPermissions:
+      - open:api:remove
+    syncTriggers:
+      - behaviorRef: OpenAppApi_Sync
+        description: "删除接口时同步解除全部应用对该接口的授权（跨聚合联动：接口 → 应用接口授权）；实现为先删 open_app_api 再删 open_api（事实）"
+
+  # ── FUNC-open-auth-manage（授权管理）｜逆向触发：menu（MENU-open-auth）｜物理表：open_app(R)、open_api(R)、open_app_api(R) ──
+  # 失败分支：应用或接口不存在时返回空集；事务边界：只读；分页：否（下拉选项与已授权 ID 集合）
+  - id: OpenAuth_QueryMatrix
+    name: 查询应用授权矩阵
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且菜单可见（open:auth:view，未被代码校验，事实）"
+      - "下拉选项仅取 status=1 的应用与接口（listAppOptions / listApiOptions）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:auth:view
+    syncTriggers: []
+
+  # ── FUNC-open-auth-manage（保存授权，端点 POST /admin/open/auth/save）｜物理表：open_app_api(R/C/D) ──
+  # 失败分支：appId 或 apiIds 不存在（系统不校验，事实：无外键约束）→ 唯一键 uk_app_api 冲突（on conflict 已处理）
+  # 事务边界：saveAppAuth 标注 @Transactional（事实）
+  # 事实：保存方式为"先全删该应用授权再批量插入"，非差量更新，并发保存互相覆盖（推断）
+  - id: OpenAuth_Save
+    name: 保存应用接口授权
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录"
+      - "appId 指向存在的应用；apiIds 去重后提交（distinct）"
+    postconditions:
+      - field: "authorizationSet"
+        setValue: "该应用的可调用接口集合被替换为提交的 apiIds 集合"
+    appliedRules: []
+    requiredPermissions:
+      - open:auth:edit
+    syncTriggers:
+      - behaviorRef: OpenAppApi_Sync
+        description: "保存授权后同步应用接口关联（跨聚合联动：应用 → 应用接口授权）；实现为 delete + insert ... on conflict do update（事实，事务内）"
+
+  # ── FUNC-open-log-query（调用日志查询）｜逆向触发：menu（MENU-open-log）｜物理表：open_call_log(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo，order by s_id desc）
+  # 筛选条件：trace_id 精确、app_key 精确、api_path 模糊（like '%'||?||'%'）、status 精确、call_time 区间
+  - id: OpenCallLog_QueryPage
+    name: 分页查询开放接口调用日志
+    ownerEntity: AGG-OPEN-CALL-LOG-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 open:log:view（菜单侧权限码；# 推断：代码未校验，事实见 open 包无 @RequiresPermissions）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:log:view
+    syncTriggers: []
+
+  # ── FUNC-open-log-query（今日调用统计，端点 GET /admin/open/log/stats）｜物理表：open_call_log(R) ──
+  # 失败分支：MySQL 方言下 SQL 语法错误（事实：使用 PostgreSQL 专有 call_time::date 与 round(...::numeric,2)）
+  # 事务边界：只读；分页：否（聚合结果）
+  # M7 绑定：本行为含分组聚合（按 app_name 统计 Top5）与派生指标 successRate，按 M7 规范属 STATISTICAL_QUERY，
+  #           由 M7 模型定义对象后回填 queryReportRef（# 推断：不在本文件臆造 M7 标识）
+  - id: OpenCallLog_Stats
+    name: 统计今日调用情况
+    ownerEntity: AGG-OPEN-CALL-LOG-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 open:log:view"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:log:view
+    syncTriggers: []
+
+  # ── FUNC-open-log-query（导出，端点 GET /admin/open/log/exportCsv）｜物理表：open_call_log(R) ──
+  # 失败分支：导出异常被 catch 仅打日志，浏览器可能收到空体或部分内容（事实）
+  # 事务边界：只读；分页：否（事实：导出路径未调用 startPage，按筛选条件全量导出，与列表分页结果集大小不一致）
+  # 风险：CSV 未对 = + - @ 开头的单元格做前缀转义，req_body/resp_body 来自外部请求，存在公式注入风险（推断）
+  - id: OpenCallLog_ExportCsv
+    name: 导出调用日志 CSV
+    ownerEntity: AGG-OPEN-CALL-LOG-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 open:log:view"
+      - "筛选条件与列表页一致"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:log:view
+    syncTriggers: []
+
+  # ── FUNC-open-doc-manage（文档管理）｜逆向触发：menu（MENU-open-doc）｜物理表：open_api_doc(R)、open_api(R) ──
+  # 失败分支：无；事务边界：只读；分页：否（事实：selectDocList 全表查询，无分页无筛选）
+  # 说明：端点 GET /admin/open/doc/html/{apiId} 为单接口 HTML 预览，与生成行为共用 ApiDocService 生成器
+  - id: OpenApiDoc_QueryList
+    name: 查询接口文档列表
+    ownerEntity: AGG-OPEN-API-DOC-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且菜单可见（open:doc:view，未被代码校验，事实）"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:doc:view
+    syncTriggers: []
+
+  # ── FUNC-open-doc-manage（生成文档，端点 POST /admin/open/doc/generate）｜物理表：open_api_doc(C)、open_api(R)、open_app(R) ──
+  # 失败分支：接口不存在 → AjaxResult.error("接口不存在")；apiIds 为空时生成空文档（Convert.toLongArray 得空数组，不报错）
+  # 事务边界：saveDoc 未标注 @Transactional（事实）
+  # 事实：无 updateDoc 入口，每次生成新增一条记录，会持续累积重复文档；api_ids 原样存逗号分隔字符串
+  - id: OpenApiDoc_Generate
+    name: 生成接口文档
+    ownerEntity: AGG-OPEN-API-DOC-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录"
+      - "至少选择一个已登记的接口（apiIds 非空）"
+      - "关联应用存在（app_id 为逻辑外键）"
+      - "baseUrl 可解析（由 X-Forwarded-* 或 request 信息拼装）"
+    postconditions:
+      - field: "open_api_doc"
+        setValue: "新增一行文档记录（app_id、doc_title、doc_version、api_ids、html_content、create_time）"
+    appliedRules: []
+    requiredPermissions:
+      - open:doc:add
+    syncTriggers: []
+
+  # ── FUNC-open-doc-manage（下载文档，端点 GET /admin/open/doc/download）｜物理表：open_api(R)、open_app(R)（不落库） ──
+  # 失败分支：异常被 try/catch(Exception ignored){} 完全吞掉（事实），浏览器可能收到空响应
+  # 事务边界：只读（现场重新生成 HTML，不写 open_api_doc）；分页：否
+  - id: OpenApiDoc_Download
+    name: 下载接口文档 HTML
+    ownerEntity: AGG-OPEN-API-DOC-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录"
+      - "所选接口存在"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - open:doc:view
+    syncTriggers: []
+
+  # ── FUNC-open-gateway-invoke（开放接口网关调用）· 鉴权与路由决策 ｜逆向触发：api-only（non-interactive）｜
+  #    物理表：open_api(R)、open_app(R)、open_app_api(R) ──
+  # 失败分支（错误码取自源码常量）：40001 缺认证头/appKey 无效或禁用 → 40002 时间戳超差或格式非法 →
+  #           40003 签名不匹配 → 40004 路径不存在/接口已禁用/应用无授权 → 40005 nonce 重复
+  # 事务边界：OpenApiFilter.doFilterInternal 未标注事务；3 次 SELECT 各自独立提交，不经过 MyBatis（JdbcTemplate 直连）
+  # 幂等：无网关幂等键，唯一性由 checkNonce 的 appKey:nonce 承担，存于进程内 ConcurrentHashMap
+  # # 推断：多实例部署或重启后 nonce 缓存不共享，幂等退化为非幂等
+  - id: OpenGateway_Authenticate
+    name: 网关鉴权与路由决策
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "请求 URI 以 /open/ 开头（OpenApiFilter.shouldNotFilter 放行其余路径）"
+      - "请求体可缓存（CachedBodyHttpServletRequest，供签名与转发各读一次）"
+      - "need_sign=1 时请求头 X-App-Key / X-Timestamp / X-Nonce / X-Sign 齐备且时间戳在 ±5 分钟内"
+      - "应用满足 status=1 且 expire_time 为空或未过期"
+      - "应用对目标接口存在授权（open_app_api 计数 > 0）"
+      - "HMAC-SHA256 签名按 key 升序拼接后校验一致"
+    postconditions:
+      - field: "request.attribute(OPEN_AUTH_CONTEXT)"
+        setValue: "写入 appKey、appName、apiPath、method、targetUrl、timeoutMs 供转发阶段消费"
+      - field: "traceId"
+        setValue: "取请求头 X-Trace-Id 或生成 UUID，写入 TraceContext/MDC 并回写响应头"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers:
+      - behaviorRef: OpenCallLog_Record
+        description: "无论成功、鉴权失败还是转发异常都必须留痕（跨聚合联动：开放接口定义 → 调用日志）；实现为 OpenApiFilter 的 finally 块调用 OpenApiLogService.save（事实，事务外、异常被吞）"
+
+  # ── FUNC-open-gateway-invoke（网关转发执行）｜物理表：open_app(R)、open_api(R)（读取），不写库 ──
+  # 失败分支：50001 方法不支持/后端调用失败/转发异常 → 50002 下游超时（SocketTimeoutException 或消息含 timed out）
+  # 事务边界：OpenGatewayController.gateway 未标注事务；转发为外部 HTTP 调用，不受本地事务保护（无补偿）
+  # 事实：下游响应先尝试 JSON.parse，成功则作为结构化 data，失败作为纯文本，统一包成 OpenResult.ok 且 HTTP 恒为 200
+  - id: OpenApiProxy_Forward
+    name: 转发请求到目标业务系统
+    ownerEntity: AGG-OPEN-API-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "鉴权阶段已写入 OPEN_AUTH_CONTEXT（缺失时直接返回 40001 鉴权上下文丢失）"
+      - "open_api.target_url 可达"
+    postconditions:
+      - field: "response.body"
+        setValue: "返回 OpenResult（code/msg/data），HTTP 状态恒为 200，响应头含 X-Trace-Id"
+      - field: "request.attribute(OPEN_RESPONSE_BODY / OPEN_RESPONSE_CODE / OPEN_RESPONSE_HEADERS)"
+        setValue: "回写响应体、状态与响应头供日志阶段使用（事实：resp_headers 未被日志写入读取）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-open-selftest（开放平台自检闭环）· 种子装载 ｜逆向触发：api-only（non-interactive）｜
+  #    物理表：open_app(D/C)、open_api(D/C)、open_app_api(D/C) ──
+  # 失败分支：种子脚本非 PostgreSQL 兼容语法（open_api_httpbin_min_seed.sql 使用 MySQL 的 ON DUPLICATE KEY UPDATE，事实）
+  # 事务边界：脚本以独立语句执行，无事务封装，中途失败会留下不一致状态（推断）
+  # # 推断：本行为一次写入 3 个聚合（应用/接口/授权），严格意义上超出"一个行为只改一个聚合"，
+  #        本体层按"自检种子装载"这一业务目的保留为单行为，并在 M6 流程中标注异常与补偿（重跑种子脚本）
+  - id: OpenSelftest_LoadSeed
+    name: 装载自检种子数据
+    ownerEntity: AGG-OPEN-APP-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已执行 open_api_selftest_seed.sql 或 open_api_httpbin_min_seed.sql"
+      - "种子主键可用（应用 s_id=90001，接口 s_id=90001~90005）"
+    postconditions:
+      - field: "open_app / open_api / open_app_api"
+        setValue: "先删后插固定主键数据（幂等初始化）；应用 ak_selftest_demo 授权 90001/90003/90004/90005，故意不授权 90002 用于验证 40004"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── FUNC-open-selftest（自检链路校验）｜物理表：open_call_log(R) ──
+  # 失败分支：网关鉴权失败（40004）→ 路由失败 → 超时 50002（目标 10.255.255.1:81 不可达）→ 日志未落库
+  # 事务边界：只读断言；事实：自检桩 /selftest/** 为 Shiro anon 且 OpenApiFilter 只拦截 /open/ 前缀
+  # 外部依赖：90003–90005 的目标为公网 httpbin.org，离线环境自检会以 50001/50002 失败（事实）
+  - id: OpenSelftest_VerifyChain
+    name: 校验自检链路与调用日志
+    ownerEntity: AGG-OPEN-CALL-LOG-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "自检种子已装载"
+      - "服务实例已启动并监听 server.port=5656"
+      - "自检请求经 /open/selftest/** 走完整网关链路"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：应用接口授权维护（上游：OpenAuth_Save / OpenApp_Remove / OpenApi_Remove）｜
+  #    物理表：open_app_api(C/U/D)、open_app(R)、open_api(R) ──
+  # 失败分支：appId/apiIds 不存在（无外键约束，事实：DDL 无 FOREIGN KEY）
+  # 事务边界：与上游同事务（上游 @Transactional）；时机：事务内
+  # 事实：授权集合是网关 hasPermission 判定的唯一依据，保存后即时生效
+  - id: OpenAppApi_Sync
+    name: 同步应用接口授权关联
+    ownerEntity: AGG-OPEN-APP-API-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "上游行为已确定目标应用与接口集合（或应用/接口被删除）"
+    postconditions:
+      - field: "open_app_api"
+        setValue: "按应用全量重建授权行（先 delete 再 insert ... on conflict (app_id, api_id) do update），或按应用/接口级联删除"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ── 联动目标：调用日志落库（上游：OpenGateway_Authenticate）｜物理表：open_call_log(C) ──
+  # 失败分支：写入异常被 OpenApiLogService.save 内部 try/catch 吞掉，仅打 error 日志，不影响接口返回（事实）
+  # 事务边界：事务外独立提交，与网关主链路无共享事务；时机：请求处理结束（finally）
+  # 关于"写调用日志 → 更新统计"：系统中不存在任何统计物理表（database-schema.md 34 张表无统计表），
+  #   调用统计由查询侧实时聚合生成（OpenManageService.queryLogStatsToday 单条 SQL 聚合 open_call_log，
+  #   以及 GET /admin/open/log/stats 的 Top5 分组），故不建立"更新统计"型 syncTrigger（事实 + 规范 §3.2.2 边界）
+  - id: OpenCallLog_Record
+    name: 记录开放接口调用日志
+    ownerEntity: AGG-OPEN-CALL-LOG-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "网关请求进入 finally 分支（成功、鉴权失败或转发异常均适用）"
+    postconditions:
+      - field: "open_call_log"
+        setValue: "新增一行 13 列记录（trace_id、app_key、app_name、api_path、method、req_body≤4000、resp_code、resp_body≤4000、cost_ms、status、error_msg≤4000、client_ip、call_time）"
+      - field: "open_call_log.req_headers / resp_headers"
+        setValue: "事实：这两列始终为 NULL（save 未写入；resp_headers 虽被写入请求属性但未被读取）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # G. DOM-quartz 调度域（FUNC-job-manage / job-scheduler / job-log-query）
+  #    说明：Quartz 定时任务不是审批流，其调度执行链在 M6 中以 SCHEDULE 触发的协同流表达。
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── FUNC-job-manage（定时任务管理）｜逆向触发：menu（菜单已移除，权限码 monitor:job:*）｜物理表：sys_job(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: Job_QueryPage
+    name: 分页查询定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:list
+    syncTriggers: []
+
+  # ── FUNC-job-manage（导出，端点 POST /monitor/job/export）──
+  # 失败分支：无权限；事务边界：只读；分页：否（全量导出）
+  - id: Job_Export
+    name: 导出定时任务清单
+    ownerEntity: AGG-JOB-001
+    behaviorType: QUERY
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:export
+    syncTriggers: []
+
+  # ── FUNC-job-manage（新增任务，端点 POST /monitor/job/add）｜物理表：sys_job(C)、QRTZ_*(C) ──
+  # 失败分支：Cron 表达式非法（CronUtils.isValid=false，控制器入口即拒）→ 调用目标不在白名单／Bean 或类不存在
+  # 事务边界：addJob 标注 @Transactional（事实）；实现为先写 sys_job 再创建 Quartz 调度
+  # # 推断：Quartz Scheduler 状态（QRTZ_* 由框架独立事务写入）与 sys_job 不在同一事务域，外围回滚时调度可能已创建
+  - id: Job_Add
+    name: 新增定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:add"
+      - "cron_expression 通过 CronUtils.isValid 校验"
+      - "job_name / job_group 唯一；invoke_target 或 request_url 合法"
+    postconditions:
+      - field: "sys_job"
+        setValue: "新增任务定义（job_type、invoke_target、request_url、method、headers、body、content_type、timeout、misfire_policy、concurrent、status）"
+      - field: "quartzScheduler"
+        setValue: "注册触发器；CronUtils.getNextExecution 为空（永不再触发）时创建后立即 pauseJob"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:add
+    syncTriggers: []
+
+  # ── FUNC-job-manage（修改任务，端点 POST /monitor/job/edit）｜物理表：sys_job(U)、QRTZ_*(U/D/C) ──
+  # 失败分支：Cron 非法 → 任务不存在
+  # 事务边界：updateJob / updateSchedulerJob 标注 @Transactional（事实）
+  - id: Job_Edit
+    name: 修改定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:edit"
+      - "目标任务存在；Cron 表达式合法"
+    postconditions:
+      - field: "sys_job"
+        setValue: "更新任务定义与 update_time"
+      - field: "quartzScheduler"
+        setValue: "删除旧触发器并按新定义重建调度"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:edit
+    syncTriggers: []
+
+  # ── FUNC-job-manage（启停，端点 POST /monitor/job/changeStatus）｜物理表：sys_job(U)、QRTZ_*(U) ──
+  # 失败分支：任务不存在；事务边界：changeStatus / pauseJob / resumeJob 均标注 @Transactional(rollbackFor=Exception.class)（事实）
+  - id: Job_ChangeStatus
+    name: 启用或暂停定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:changeStatus"
+      - "目标任务存在"
+    postconditions:
+      - field: "sys_job.status"
+        setValue: "'0'（正常，恢复调度）或 '1'（暂停）"
+      - field: "quartzScheduler"
+        setValue: "调用 scheduler.pauseJob / resumeJob 同步调度状态"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:changeStatus
+    syncTriggers: []
+
+  # ── FUNC-job-manage（立即执行一次，端点 POST /monitor/job/run）｜物理表：sys_job(R)、sys_job_log(C) ──
+  # 失败分支：任务不存在；目标方法/类不存在（执行期异常落 sys_job_log，不向本行为抛回）
+  # 事务边界：run 标注 @Transactional（事实）；调度触发与日志写入由执行体独立完成
+  - id: Job_RunOnce
+    name: 立即执行一次任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:changeStatus（端点复用，事实）"
+      - "目标任务存在"
+    postconditions:
+      - field: "quartzScheduler"
+        setValue: "以 scheduler.triggerJob 立即触发一次，不等待 Cron"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:changeStatus
+    syncTriggers:
+      - behaviorRef: Job_Execute
+        description: "手工触发与 Cron 触发进入同一执行体（跨聚合联动：任务定义 → 任务执行）；实现为 scheduler.triggerJob → AbstractQuartzJob.execute（事实）"
+
+  # ── FUNC-job-manage（删除任务，端点 POST /monitor/job/remove）｜物理表：sys_job(D)、QRTZ_*(D) ──
+  # 失败分支：任务不存在；事务边界：deleteJobByIds 标注 @Transactional(rollbackFor=Exception.class)（事实）
+  - id: Job_Remove
+    name: 删除定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: USER_ACTION
+    preconditions:
+      - "已登录且具备权限码 monitor:job:remove"
+      - "目标任务存在"
+    postconditions:
+      - field: "sys_job"
+        setValue: "删除任务定义"
+      - field: "quartzScheduler"
+        setValue: "先从调度器 deleteJob 再删库（事实顺序）"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:remove
+    syncTriggers: []
+
+  # ── FUNC-job-scheduler（定时任务调度执行）｜逆向触发：scheduled（Quartz Cron）｜
+  #    物理表：sys_job(R/U)、sys_job_log(C)、QRTZ_TRIGGERS(R)、QRTZ_JOB_DETAILS(R) ──
+  # 失败分支：目标 Bean/类不存在（NoSuchBeanDefinitionException / ClassNotFoundException）→ 方法执行抛异常 → 执行超时
+  # 事务边界：执行体自身无 @Transactional；sys_job_log 由 after 独立写入，异常被 execute 捕获不再上抛（事实）
+  # 幂等：任务执行不幂等，misfire_policy 决定错失触发补偿；concurrent='0' 时由 QuartzDisallowConcurrentExecution 阻止并发
+  # 事实：启动加载（SysJobServiceImpl.init）遍历 sys_job 全表创建调度，TaskException 仅记日志不中断启动
+  # # 推断：sys_job 的"执行信息更新"在逆向主链标注为 U，但 AbstractQuartzJob 只写 sys_job_log，未见 sys_job 更新语句
+  - id: Job_Execute
+    name: 调度执行定时任务
+    ownerEntity: AGG-JOB-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "应用启动完成且任务 status='0'（已注册到 Quartz）"
+      - "Cron 到达触发点，或管理员手工触发（triggerJob）"
+      - "并发策略允许（concurrent='0' 时前一实例未在运行）"
+    postconditions:
+      - field: "jobExecution"
+        setValue: "按 job_type 分派执行：HTTP 任务走 invokeHttp，Bean 任务走 invokeBean 反射调用"
+      - field: "sys_job"
+        setValue: "执行耗时等信息（# 推断：逆向主链标注 U，源码未见到对 sys_job 的更新语句）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers:
+      - behaviorRef: JobLog_Record
+        description: "每次执行（成功或失败）都必须写调度日志（跨聚合联动：任务定义 → 调度日志）；实现为 AbstractQuartzJob.after 统一写 sys_job_log（事实，写入失败仅打日志）"
+
+  # ── FUNC-job-log-query（调度日志查询）｜逆向触发：api-only ｜物理表：sys_job_log(R) ──
+  # 失败分支：无权限；事务边界：只读；分页：是（startPage + TableDataInfo）
+  - id: JobLog_QueryPage
+    name: 分页查询调度日志
+    ownerEntity: AGG-JOB-LOG-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:job:list"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:list
+    syncTriggers: []
+
+  # ── FUNC-job-log-query（导出，端点 POST /monitor/jobLog/export）──
+  # 失败分支：无权限；事务边界：只读；分页：否（全量导出）
+  - id: JobLog_Export
+    name: 导出调度日志
+    ownerEntity: AGG-JOB-LOG-001
+    behaviorType: QUERY
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:job:export"
+    postconditions: []
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:export
+    syncTriggers: []
+
+  # ── FUNC-job-log-query（清理，端点 POST /monitor/jobLog/remove 与 clean）｜物理表：sys_job_log(D) ──
+  # 失败分支：无权限；事务边界：批量删除，未标注 @Transactional（推断）
+  - id: JobLog_Clean
+    name: 清理调度日志
+    ownerEntity: AGG-JOB-LOG-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "已登录且具备权限码 monitor:job:remove"
+    postconditions:
+      - field: "sys_job_log"
+        setValue: "按勾选 ID 或全量清空删除调度日志"
+    appliedRules: []
+    requiredPermissions:
+      - monitor:job:remove
+    syncTriggers: []
+
+  # ── 联动目标：调度日志落库（上游：Job_Execute）｜物理表：sys_job_log(C) ──
+  # 失败分支：写入失败仅打日志（事实），执行结果静默丢失
+  # 事务边界：与执行体不共享事务；时机：执行结束（after），无论成功或异常
+  - id: JobLog_Record
+    name: 写入任务执行日志
+    ownerEntity: AGG-JOB-LOG-001
+    behaviorType: COMMAND
+    triggerType: SYSTEM
+    preconditions:
+      - "执行体已完成（before/doExecute 之后进入 after）"
+    postconditions:
+      - field: "sys_job_log"
+        setValue: "新增一行（job_name、job_group、invoke_target、job_message='<任务名> 总共耗时：<runMs>毫秒'、status、exception_info≤2000、create_time）"
+      - field: "sys_job_log.invoke_target"
+        setValue: "HTTP 任务记为 requestMethod + ' ' + requestUrl（事实）"
+    appliedRules: []
+    requiredPermissions:
+      - "无（匿名或系统内部）"
+    syncTriggers: []
+

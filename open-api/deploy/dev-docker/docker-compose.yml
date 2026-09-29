@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  openapi:
+    image: registry.cn-shenzhen.aliyuncs.com/chaoqs/qvsu_open_api:qvsu_open_api_2026-03-27-13-12-27
+    container_name: qvsu-openapi
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "5656:5656"
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data

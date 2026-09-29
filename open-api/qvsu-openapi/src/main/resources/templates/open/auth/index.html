@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head><th:block th:include="include :: header('Open授权管理')" /></head>
+<body class="gray-bg">
+<div class="container-div">
+    <div class="row">
+        <div class="col-sm-12 search-collapse">
+            <form id="auth-form">
+                <div class="select-list">
+                    <ul>
+                        <li>
+                            应用：
+                            <select id="appSelect" class="form-control" style="width:420px; display:inline-block;"></select>
+                        </li>
+                        <li>
+                            <a class="btn btn-primary btn-rounded btn-sm" onclick="loadAuth()"><i class="fa fa-search"></i>&nbsp;加载授权</a>
+                            <a class="btn btn-success btn-rounded btn-sm" onclick="saveAuth()"><i class="fa fa-save"></i>&nbsp;保存授权</a>
+                            <a class="btn btn-warning btn-rounded btn-sm" onclick="checkAll(false)"><i class="fa fa-check-square-o"></i>&nbsp;全选</a>
+                            <a class="btn btn-default btn-rounded btn-sm" onclick="checkAll(true)"><i class="fa fa-square-o"></i>&nbsp;清空</a>
+                        </li>
+                    </ul>
+                </div>
+            </form>
+        </div>
+        <div class="col-sm-12">
+            <div class="ibox">
+                <div class="ibox-title">
+                    <h5>应用接口授权列表</h5>
+                </div>
+                <div class="ibox-content">
+                    <div id="apiBox" class="row"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<th:block th:include="include :: footer" />
+<script>
+    var prefix = ctx + "admin/open/auth";
+    var apis = [];
+    var currentAppId = null;
+    var authorizedApiIds = [];
+
+    $(function() {
+        $.get(prefix + "/apps", function(res) {
+            if (res.code === 0) {
+                var html = '<option value="">请选择应用</option>';
+                (res.data || []).forEach(function(a){
+                    html += '<option value="' + a.id + '">' + a.appName + ' (' + a.appKey + ')</option>';
+                });
+                $("#appSelect").html(html);
+            }
+        });
+        $.get(prefix + "/apis", function(res) {
+            if (res.code === 0) {
+                apis = res.data || [];
+                renderApis([]);
+            }
+        });
+    });
+
+    function renderApis(selected) {
+        var selectedMap = {};
+        (selected || []).forEach(function(i){ selectedMap[i] = true; });
+        var authorizedMap = {};
+        authorizedApiIds.forEach(function(i){ authorizedMap[i] = true; });
+        var html = '';
+        apis.forEach(function(api){
+            var checked = selectedMap[api.id] ? 'checked' : '';
+            var isAuthorized = authorizedMap[api.id];
+            var disabled = isAuthorized ? 'disabled' : '';
+            var labelStyle = isAuthorized ? 'color: #999; background-color: #f5f5f5; padding: 4px 8px; border-radius: 3px;' : '';
+            var badge = isAuthorized ? ' <span class="label label-success" style="font-size:10px;">已授权</span>' : '';
+            html += '<div class="col-sm-4" style="margin-bottom:8px;">'
+                + '<label class="checkbox-box" style="' + labelStyle + '">'
+                + '<input type="checkbox" name="apiIds" value="' + api.id + '" ' + checked + ' ' + disabled + '/>'
+                + api.apiName + ' [' + api.method + ' ' + api.apiPath + ']' + badge
+                + '</label></div>';
+        });
+        $("#apiBox").html(html || '<div class="col-sm-12"><span class="text-muted">暂无可授权接口</span></div>');
+    }
+
+    function loadAuth() {
+        var appId = $("#appSelect").val();
+        if (!appId) {
+            $.modal.msgWarning('请先选择应用');
+            return;
+        }
+        currentAppId = appId;
+        $.get(prefix + '/apiIds', { appId: appId }, function(res){
+            if (res.code === 0) {
+                authorizedApiIds = res.data || [];
+                renderApis([]);
+                $.modal.msgSuccess("已加载 " + authorizedApiIds.length + " 个已授权接口");
+            } else {
+                $.modal.msgError(res.msg || '加载授权失败');
+            }
+        });
+    }
+
+    function saveAuth() {
+        var appId = $("#appSelect").val();
+        if (!appId) {
+            $.modal.msgWarning('请先选择应用');
+            return;
+        }
+        // 包含已授权的接口ID + 新选中的接口ID
+        var apiIds = authorizedApiIds.slice();
+        $("input[name='apiIds']:checked:not(:disabled)").each(function(){
+            var val = $(this).val();
+            if (apiIds.indexOf(val) === -1) {
+                apiIds.push(val);
+            }
+        });
+        var data = { appId: appId, apiIds: apiIds };
+        $.ajax({
+            url: prefix + "/save",
+            type: "post",
+            traditional: true,
+            data: data,
+            success: function(res){
+                if (res.code === 0) {
+                    $.modal.msgSuccess("保存成功");
+                    loadAuth();
+                } else {
+                    $.modal.msgError(res.msg || "保存失败");
+                }
+            }
+        });
+    }
+
+    function checkAll(clear) {
+        $("input[name='apiIds']:not(:disabled)").prop("checked", !clear);
+    }
+</script>
+</body>
+</html>
+

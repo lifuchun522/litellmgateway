@@ -1,0 +1,4963 @@
+# =============================================================================
+# MU UI 模型 — mu-ui-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务，精简版）
+# 建模方式：**基于已校验的逆向元模型正向表达**，不新造页面、不臆造控件。
+# 事实来源（只读引用，未修改）：
+#   - docs/meta-model/business-architecture.md §5（16 个菜单入口 MENU-* 与 menu_id、URL、权限码、按钮权限表）
+#   - docs/meta-model/interface-index.md（195 个接口节点 API-*）
+#   - docs/meta-model/business-function-requirements.md（32 个功能）
+#   - 逐个读取的 36 个真实 Thymeleaf 业务模板（见 §模板清单；已排除 templates/demo/** 的 73 个框架示例页）
+#
+# 【约定 1｜menuId 取值】二级菜单 menuId 直接采用 `sys_menu.menu_id`（C 类页面菜单）的稳定业务标识
+#   字符串形式，并在 x_menuIdNumeric 中给出数值原值；一级菜单 menuId 采用 M 类目录的 menu_id。
+#   事实来源：deploy/local-docker/mysql/init/10-qvsu.sql、open-api/sql/open_api_menu.sql、open-api/sql/quartz.sql。
+#
+# 【约定 2｜screenId 取值】优先使用模板中真实存在的容器/控件 id（如 `user.html` 的 `#bootstrap-table`
+#   所在页面取 `frmSysUserList`）。**假设**：模板未给页面级唯一 id 时，按 `frm<实体><用途>` 规则命名，
+#   理由是该系统前端框架（`static/ruoyi/js/ry-ui.js`）以 `$('#bootstrap-table')` / `prefix + "/list"` 约定驱动，
+#   页面本身没有全局 id 可用。
+#
+# 【约定 3｜dataBinding 取值】引用 M1 对象模型的聚合属性路径 `OBJ-<实体>.<属性>`。本仓库 M1
+#   （m1-object-model.yaml）尚未产出，故按 docs/meta-model/domain-model.md 已定义的 `OBJ-*` 稳定 ID
+#   取值，并以 docs/meta-model/database-schema.md 的字段名作为属性名（该文件的 Code Field 列为 camelCase
+#   属性名，Physical Column 列为表字段名）。# 推断：依据 domain-model.md 的 OBJ-* 主定义表与 database-schema.md 的字段表
+#
+# 【约定 4｜behaviorRef 取值】引用 M2 行为模型的行为名。本仓库 M2 尚未产出，故按
+#   `<聚合根>_<Action>` 命名（对照 docs/ontology/_spec/00-overview-and-relations.md 的 Contract_Submit /
+#   Contract_QueryList 既有命名）。**查询类查询行为名必须与 m7-report-model.yaml 的 behaviorRef 逐字一致**
+#   （规范 §7.6 第 2~3 条的一对一要求），本文件已对齐，见 §查询绑定对照表。
+#
+# 【约定 5｜扩展键】MU-spec 模板未给「接口节点引用 / 真实 URL / 数据来源报表 / 权限码 / 模板路径」的字段位。
+#   为不违反「MU 只引用、不重定义」的边界，这些事实以 `x_` 前缀扩展键承载，且不引入新的语义。
+#
+# 【排除项（事实，本文件不建模）】
+#   1. `templates/demo/**` 约 73 个框架示例页（按钮/表格/弹窗/报表等演示页）——框架自带示例，非本系统业务功能。
+#   2. 操作日志、登录日志、在线用户监控页面——**不存在**：无 Controller、无模板，且
+#      `open_api_menu.sql:72-90` 已显式删除 `monitor:operlog:*`、`monitor:logininfor:*`、`monitor:online:*`
+#      的菜单与按钮权限（见 business-architecture.md §5.6 与 §7.4）。
+#   3. 代码生成工具页面 `templates/tool/build/build.html`——工具链整体移除（`open_api_menu.sql:99-108`）。
+#   4. `/selftest/httpbin/**` 自检入口与 `/open/**` 网关入口——非页面入口，无界面。
+#   5. 图表/流程画布类前端库——**已核实不存在**：`templates/` 下无 react-flow、jsPlumb、bpmn-js、
+#      echarts 实例页（`include.html` 仅提供 `echarts-js`/`peity-js`/`sparkline-js` 三个 th:fragment，
+#      但无任何业务页面 include 它们）。
+#
+# 【框架级 UI 事实（本文件全部屏幕共用，逐个模板不重复书写）】
+#   A) 表格请求方式：`static/ruoyi/js/ry-ui.js:41` 的 `$.table.init` 默认 `method: 'post'`，
+#      `sidePagination: 'server'`（ry-ui.js:43）→ 所有列表页的 list 端点均为 **POST**，
+#      与 interface-index.md 中各 `API-*-list` 节点的 HTTP 方法一致。
+#   B) 分页参数名映射：前端用 `pageSize`(ry-ui.js:49) / `pageNumber`(ry-ui.js:50)，
+#      `$.table.queryParams`（ry-ui.js:169-174）转换为**后端参数 `pageSize` / `pageNum`**
+#      （`pageNum = offset / limit + 1`），并合并表单查询条件。
+#   C) 日期控件：`static/ruoyi/js/common.js:90-94` 对**所有** `.time-input` 元素统一绑定 laydate
+#      时间控件，`resetDate()`（common.js:409）负责清空 —— 因此模板中未显式引入日期控件时，
+#      `class="time-input"` 的输入框仍按 DATEPICKER 建模。本文件所有 dtpStart/dtpEnd 依此判定。
+#   D) 表单校验：jQuery validate（`ajax/libs/validate`），规则写在各模板的 `validate({rules:{...}})`
+#      内；本文件已把 `required` / `remote` 唯一性 / `digits` / `email` / `isPhone` / `minlength` /
+#      `maxlength` 等规则写入对应 element.refRules。
+# =============================================================================
+model_type: UI
+version: "1.0"
+domain: "QVSU OpenAPI 管理与网关服务"
+
+application:
+  name: 聚搭OpenAPI系统
+  menus:
+    # -------------------------------------------------------------------------
+    # 一级菜单 1：系统管理（真实 M 类目录 menu_id=1，parent_id=0，order_num=1，icon=fa fa-gear）
+    # -------------------------------------------------------------------------
+    - menuId: "1"
+      name: 系统管理
+      x_menuIdNumeric: 1
+      x_menuType: M
+      x_icon: "fa fa-gear"
+      x_evidence: business-architecture.md §5.3 MENU-sys-root
+      children:
+        - menuId: "100"
+          name: 用户管理
+          screenRef: frmSysUserList
+          x_menuIdNumeric: 100
+          x_menuType: C
+          x_routeUrl: /system/user
+          x_permission: system:user:view
+          x_icon: "fa fa-user-o"
+        - menuId: "101"
+          name: 角色管理
+          screenRef: frmSysRoleList
+          x_menuIdNumeric: 101
+          x_menuType: C
+          x_routeUrl: /system/role
+          x_permission: system:role:view
+          x_icon: "fa fa-user-secret"
+        - menuId: "102"
+          name: 菜单管理
+          screenRef: frmSysMenuList
+          x_menuIdNumeric: 102
+          x_menuType: C
+          x_routeUrl: /system/menu
+          x_permission: system:menu:view
+          x_icon: "fa fa-th-list"
+        - menuId: "103"
+          name: 部门管理
+          screenRef: frmSysDeptList
+          x_menuIdNumeric: 103
+          x_menuType: C
+          x_routeUrl: /system/dept
+          x_permission: system:dept:view
+          x_icon: "fa fa-sitemap"
+        - menuId: "104"
+          name: 岗位管理
+          screenRef: frmSysPostList
+          x_menuIdNumeric: 104
+          x_menuType: C
+          x_routeUrl: /system/post
+          x_permission: system:post:view
+          x_icon: "fa fa-address-book"
+        - menuId: "105"
+          name: 字典管理
+          screenRef: frmSysDictTypeList
+          x_menuIdNumeric: 105
+          x_menuType: C
+          x_routeUrl: /system/dict
+          x_permission: system:dict:view
+          x_icon: "fa fa-book"
+          x_note: 本系统字典管理为「类型列表 + 行内『列表』按钮下拉打开字典数据」的单菜单双屏结构；MU 规范要求二级菜单与屏幕一对一，故拆为同级两个二级菜单 105/1051
+        - menuId: "1051"
+          name: 字典数据
+          screenRef: frmSysDictDataList
+          x_menuIdNumeric: 0
+          x_menuType: C
+          x_routeUrl: /system/dict/data
+          x_permission: system:dict:list
+          x_icon: "#"
+          x_note: 本系统无独立菜单行；由字典类型列表行内「列表」按钮经 $.modal.openTab 打开（事实：templates/system/dict/type/type.html detail()）
+        - menuId: "106"
+          name: 参数设置
+          screenRef: frmSysConfigList
+          x_menuIdNumeric: 106
+          x_menuType: C
+          x_routeUrl: /system/config
+          x_permission: system:config:view
+          x_icon: "fa fa-gears"
+        - menuId: "107"
+          name: 通知公告
+          screenRef: frmSysNoticeList
+          x_menuIdNumeric: 107
+          x_menuType: C
+          x_routeUrl: /system/notice
+          x_permission: system:notice:view
+          x_icon: "fa fa-bullhorn"
+        - menuId: "110"
+          name: 定时任务
+          screenRef: frmJobList
+          x_menuIdNumeric: 110
+          x_menuType: C
+          x_routeUrl: /monitor/job
+          x_permission: monitor:job:view
+          x_icon: "fa fa-tasks"
+          x_evidence: open-api/sql/quartz.sql:191-208（该菜单行不在 docs/tools/menus.json 内，见 business-architecture.md §7.2）
+        - menuId: "1101"
+          name: 调度日志
+          screenRef: frmJobLogList
+          x_menuIdNumeric: 0
+          x_menuType: C
+          x_routeUrl: /monitor/jobLog
+          x_permission: monitor:job:list
+          x_icon: "#"
+          x_note: 本系统无独立菜单行；由定时任务列表工具栏「日志」按钮或行内「调度日志」经 $.modal.openTab 打开（事实：templates/monitor/job/job.html jobLog()）
+
+    # -------------------------------------------------------------------------
+    # 一级菜单 2：OpenAPI管理（真实 M 类目录 menu_id=2100，parent_id=1，order_num=10，icon=fa fa-plug）
+    # -------------------------------------------------------------------------
+    - menuId: "2100"
+      name: OpenAPI管理
+      x_menuIdNumeric: 2100
+      x_menuType: M
+      x_icon: "fa fa-plug"
+      x_evidence: business-architecture.md §5.3 MENU-open-root
+      children:
+        - menuId: "2101"
+          name: 应用管理
+          screenRef: frmOpenAppList
+          x_menuIdNumeric: 2101
+          x_menuType: C
+          x_routeUrl: /admin/open/app
+          x_permission: open:app:view
+          x_icon: "#"
+        - menuId: "2102"
+          name: 接口管理
+          screenRef: frmOpenApiList
+          x_menuIdNumeric: 2102
+          x_menuType: C
+          x_routeUrl: /admin/open/api
+          x_permission: open:api:view
+          x_icon: "#"
+        - menuId: "2103"
+          name: 授权管理
+          screenRef: frmOpenAuth
+          x_menuIdNumeric: 2103
+          x_menuType: C
+          x_routeUrl: /admin/open/auth
+          x_permission: open:auth:view
+          x_icon: "#"
+        - menuId: "2104"
+          name: 调用日志
+          screenRef: frmOpenLogList
+          x_menuIdNumeric: 2104
+          x_menuType: C
+          x_routeUrl: /admin/open/log
+          x_permission: open:log:view
+          x_icon: "#"
+        - menuId: "2105"
+          name: 文档管理
+          screenRef: frmOpenDoc
+          x_menuIdNumeric: 2105
+          x_menuType: C
+          x_routeUrl: /admin/open/doc
+          x_permission: open:doc:view
+          x_icon: "#"
+
+    # -------------------------------------------------------------------------
+    # 一级菜单 3：首页 / 个人中心（非菜单入口型屏幕的装载菜单）
+    # -------------------------------------------------------------------------
+    - menuId: "XY-home"
+      name: 首页
+      x_menuIdNumeric: 0
+      x_menuType: M
+      x_icon: "fa fa-home"
+      # 假设：本系统首页与个人中心不在 sys_menu 中（templates/index.html 中「首页」菜单项被注释，
+      # 首页固定由 iframe 默认加载 /admin/open/app，个人中心走顶栏下拉），MU 规范要求每个屏幕都必须
+      # 挂到某个二级菜单下，故为这两个真实屏幕补建装载菜单节点。依据：templates/index.html:49-51（注释掉的 /system/main）、
+      # templates/index.html:36,208（/system/user/profile 入口）、templates/main.html（真实存在的工作台页面）
+      children:
+        - menuId: "XY-home-main"
+          name: 工作台
+          screenRef: frmHome
+          x_menuIdNumeric: 0
+          x_menuType: C
+          x_routeUrl: /system/main
+          x_permission: 无（兜底 /** 链要求已认证会话，无独立权限码）
+          x_icon: "fa fa-home"
+          x_evidence: ENTRY-index - GET /index（另含 GET /system/main 主内容区）
+        - menuId: "XY-home-profile"
+          name: 个人中心
+          screenRef: frmProfile
+          x_menuIdNumeric: 0
+          x_menuType: C
+          x_routeUrl: /system/user/profile
+          x_permission: 无（登录用户本人可访问）
+          x_icon: "fa fa-user"
+          x_evidence: templates/index.html:36,208 - 顶栏下拉与左侧用户面板均指向 /system/user/profile
+
+# =============================================================================
+# 屏幕定义（18 个）
+# =============================================================================
+screens:
+
+  # ---------------------------------------------------------------------------
+  # 1. 登录
+  # ---------------------------------------------------------------------------
+  - screenId: frmLogin
+    name: 登录
+    screenType: SINGLE_FORM
+    x_routeUrl: /login
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/login.html
+    x_permission: 无（Shiro 过滤器链 anon,captchaValidate）
+    x_entryRef: ENTRY-login
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 聚搭OpenAPI系统（logo 图）                                    │
+      ├───────────────────────────────┬──────────────────────────────┤
+      │ 欢迎使用 聚搭OpenAPI系统       │ 登录                          │
+      │ · SpringBoot  · Mybatis       │ 开放能力统一接入与管理平台      │
+      │ · Shiro       · Thymeleaf     │ 用户名: [txtUsername]         │
+      │ · Bootstrap                   │ 密码:   [txtPassword]         │
+      │                               │ 验证码: [txtValidateCode]     │
+      │ 还没有账号？ 立即注册>>        │         [imgCaptcha]（可点击换）│
+      │                               │ (chkRememberMe) 记住我         │
+      │                               │ [btnLogin]                    │
+      ├───────────────────────────────┴──────────────────────────────┤
+      │ Copyright © 2018-2026 聚搭OpenAPI系统 All Rights Reserved.     │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtUsername
+        type: TEXTBOX
+        label: 用户名
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtPassword
+        type: TEXTBOX
+        label: 密码
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.password
+        refRules:
+          - name: 密码输入掩码
+            description: input type=password；页面提供「按住鼠标显示密码」的 input-group-addon
+            expression: "value != null"
+            violationMessage: 请输入密码
+            enforcedAt: ALWAYS
+      - id: txtValidateCode
+        type: TEXTBOX
+        label: 验证码
+        io: I
+        required: true
+        refRules:
+          - name: 验证码长度
+            description: 模板限制 maxlength=5
+            expression: "len(value) <= 5"
+            violationMessage: 验证码长度不能超过 5 位
+            enforcedAt: ALWAYS
+      - id: imgCaptcha
+        type: LABEL
+        label: 验证码图片
+        io: O
+      - id: chkRememberMe
+        type: CHECKBOX
+        label: 记住我
+        io: I
+        required: false
+        refRules:
+          - name: 记住我开关可见性
+            description: 仅当 shiro.user.rememberMe 开启时渲染（模板 th:if="${isRemembered}"）
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: btnLogin
+        type: BUTTON
+        label: 登录
+    actions:
+      - actionId: actLoginSubmit
+        name: 登录
+        behaviorRef: SysLogin_Login
+        actionType: SUBMIT
+        x_interfaceRef: API-SysLoginController-ajaxLogin
+        x_http: "POST /login"
+        x_permission: 无
+      - actionId: actLoginRefreshCaptcha
+        name: 点击更换验证码
+        behaviorRef: SysCaptcha_RefreshImage
+        actionType: BUTTON
+        x_interfaceRef: API-SysCaptchaController-getKaptchaImage
+        x_http: "GET /captcha/captchaImage"
+        x_permission: 无
+      - actionId: actLoginToRegister
+        name: 立即注册
+        behaviorRef: SysRegister_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: 页面跳转（无接口）
+        x_http: "GET /register"
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 2. 注册
+  # ---------------------------------------------------------------------------
+  - screenId: frmRegister
+    name: 注册
+    screenType: SINGLE_FORM
+    x_routeUrl: /register
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/register.html
+    x_permission: 无（Shiro 过滤器链 anon,captchaValidate）
+    x_entryRef: ENTRY-register
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 聚搭OpenAPI系统（logo 图）                                    │
+      ├───────────────────────────────┬──────────────────────────────┤
+      │ 欢迎使用 聚搭OpenAPI系统       │ 注册                          │
+      │ · SpringBoot  · Mybatis       │ 开放能力统一接入与管理平台      │
+      │ · Shiro       · Thymeleaf     │ 用户名:   [txtUsername]       │
+      │ · Bootstrap                   │ 密码:     [txtPassword]       │
+      │                               │ 确认密码: [txtConfirmPassword]│
+      │ 已经有账号？ 直接登录>>        │ 验证码:   [txtValidateCode]   │
+      │                               │           [imgCaptcha]（可点击换）│
+      │                               │ (chkAcceptTerm) 我已阅读并同意 平台使用条款 │
+      │                               │ [btnRegister]                 │
+      ├───────────────────────────────┴──────────────────────────────┤
+      │ Copyright © 2018-2026 聚搭OpenAPI系统 All Rights Reserved.     │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtUsername
+        type: TEXTBOX
+        label: 用户名
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.loginName
+        refRules:
+          - name: 用户名长度
+            description: 模板限制 maxlength=20
+            expression: "len(value) <= 20"
+            violationMessage: 用户名长度不能超过 20 位
+            enforcedAt: ALWAYS
+      - id: txtPassword
+        type: TEXTBOX
+        label: 密码
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.password
+        refRules:
+          - name: 密码长度
+            description: 模板限制 maxlength=20
+            expression: "len(value) <= 20"
+            violationMessage: 密码长度不能超过 20 位
+            enforcedAt: ALWAYS
+      - id: txtConfirmPassword
+        type: TEXTBOX
+        label: 确认密码
+        io: I
+        required: true
+        refRules:
+          - name: 两次密码一致
+            description: 前端校验确认密码与新密码一致
+            expression: "value == txtPassword"
+            violationMessage: 两次输入的密码不一致
+            enforcedAt: ALWAYS
+      - id: txtValidateCode
+        type: TEXTBOX
+        label: 验证码
+        io: I
+        required: true
+      - id: imgCaptcha
+        type: LABEL
+        label: 验证码图片
+        io: O
+      - id: chkAcceptTerm
+        type: CHECKBOX
+        label: 我已阅读并同意
+        io: I
+        required: false
+      - id: btnRegister
+        type: BUTTON
+        label: 注册
+    actions:
+      - actionId: actRegisterSubmit
+        name: 注册
+        behaviorRef: SysRegister_Register
+        actionType: SUBMIT
+        x_interfaceRef: API-SysRegisterController-register
+        x_http: "POST /register"
+        x_permission: 无
+      - actionId: actRegisterRefreshCaptcha
+        name: 点击更换验证码
+        behaviorRef: SysCaptcha_RefreshImage
+        actionType: BUTTON
+        x_interfaceRef: API-SysCaptchaController-getKaptchaImage
+        x_http: "GET /captcha/captchaImage"
+        x_permission: 无
+      - actionId: actRegisterToLogin
+        name: 直接登录
+        behaviorRef: SysLogin_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: 页面跳转（无接口）
+        x_http: "GET /login"
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 3. 后台主框架（总体界面）
+  # ---------------------------------------------------------------------------
+  - screenId: frmIndexFrame
+    name: 后台主框架首页
+    screenType: QUERY_LIST
+    x_routeUrl: /index
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/index.html
+    x_permission: 兜底 /** 链（要求已认证会话）
+    x_entryRef: ENTRY-index
+    x_note: 本屏为应用外壳（顶栏 + 左侧菜单 + 标签页 + iframe 内容区 + 页脚），内容区默认加载 /admin/open/app（事实：templates/index.html:251-252）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 聚搭OpenAPI系统                          [lnkLock] 锁屏        │
+      ├───────────────────────────┬──────────────────────────────────┤
+      │ 个人中心（头像）           │ [lnkFullScreen] 全屏              │
+      │ 登录名 / 在线 / 注销       │ (ddUser) 用户昵称 ▾              │
+      ├───────────────────────────┤   ├ 个人中心                     │
+      │ 菜单树 @navSideMenu        │   ├ 修改密码                     │
+      │  ├ 系统管理 ▾              │   ├ 切换主题                     │
+      │  │   ├ 用户管理            │   ├ 横向菜单                     │
+      │  │   ├ 角色管理            │   └ 退出登录                     │
+      │  │   ├ 菜单管理            ├──────────────────────────────────┤
+      │  │   ├ 部门管理            │ 标签页 [tabPrev][tabNext][tabReload]│
+      │  │   ├ 岗位管理            │  页签：...                       │
+      │  │   ├ 字典管理            ├──────────────────────────────────┤
+      │  │   ├ 参数设置            │ iframe 内容区 @iframeContent      │
+      │  │   ├ 通知公告            │  （默认 src = /admin/open/app）   │
+      │  │   ├ 定时任务            │                                  │
+      │  │   └ 调度日志            │                                  │
+      │  ├ OpenAPI管理 ▾          │                                  │
+      │  │   ├ 应用管理            │                                  │
+      │  │   ├ 接口管理            │                                  │
+      │  │   ├ 授权管理            │                                  │
+      │  │   ├ 调用日志            │                                  │
+      │  │   └ 文档管理            │                                  │
+      │  └ …                      │                                  │
+      ├───────────────────────────┴──────────────────────────────────┤
+      │ © 2026 聚搭OpenAPI系统                                        │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: navSideMenu
+        type: GRID
+        label: 左侧菜单树
+        io: I
+        dataBinding: OBJ-SysMenu.menuName
+        dataSource: QR-SYS-MENU-001
+        refRules:
+          - name: 菜单可见性
+            description: "由 SysIndexController 按 menuService.selectMenusByUser 依权限裁剪后渲染（模板 th:each=\"menu : ${menus}\"）"
+            expression: "visible == '0'"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: iframeContent
+        type: GRID
+        label: 内容区（iframe）
+        io: O
+        refRules:
+          - name: 页签刷新联动
+            description: 菜单项的 isRefresh=='0' 时打开页签会刷新页面（模板 th:data-refresh="${menu.isRefresh == '0'}"）
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: lnkLock
+        type: BUTTON
+        label: 锁屏
+      - id: lnkFullScreen
+        type: BUTTON
+        label: 全屏
+      - id: ddUser
+        type: COMBO
+        label: 用户菜单
+        io: O
+      - id: lnkProfile
+        type: BUTTON
+        label: 个人中心
+      - id: lnkResetPwd
+        type: BUTTON
+        label: 修改密码
+      - id: lnkSwitchSkin
+        type: BUTTON
+        label: 切换主题
+      - id: lnkToggleMenu
+        type: BUTTON
+        label: 横向菜单
+      - id: lnkLogout
+        type: BUTTON
+        label: 退出登录
+      - id: tabPrev
+        type: BUTTON
+        label: 页签左移
+      - id: tabNext
+        type: BUTTON
+        label: 页签右移
+      - id: tabReload
+        type: BUTTON
+        label: 刷新
+    actions:
+      - actionId: actFrameToProfile
+        name: 个人中心
+        behaviorRef: SysProfile_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: 页面跳转（无接口）
+        x_http: "GET /system/user/profile"
+        x_permission: 无
+      - actionId: actFrameResetPwd
+        name: 修改密码
+        behaviorRef: SysProfile_OpenResetPwd
+        actionType: BUTTON
+        x_interfaceRef: 弹窗打开页面
+        x_http: "GET /system/user/profile/resetPwd"
+        x_permission: 无
+      - actionId: actFrameSwitchSkin
+        name: 切换主题
+        behaviorRef: SysIndex_SwitchSkin
+        actionType: BUTTON
+        x_interfaceRef: API-SysIndexController-switchSkin
+        x_http: "GET /system/switchSkin"
+        x_permission: 无
+      - actionId: actFrameToggleMenu
+        name: 横向菜单
+        behaviorRef: SysIndex_ChangeMenuStyle
+        actionType: BUTTON
+        x_interfaceRef: API-SysIndexController-menuStyle
+        x_http: "GET /system/menuStyle/topnav"
+        x_permission: 无
+      - actionId: actFrameLockScreen
+        name: 锁屏
+        behaviorRef: SysIndex_LockScreen
+        actionType: BUTTON
+        x_interfaceRef: API-SysIndexController-lockscreen
+        x_http: "GET /lockscreen"
+        x_permission: 无
+      - actionId: actFrameLogout
+        name: 退出登录
+        behaviorRef: SysLogin_Logout
+        actionType: BUTTON
+        x_interfaceRef: 无接口（Shiro logout 过滤器）
+        x_http: "GET /logout"
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 4. 工作台（首页主内容区）
+  # ---------------------------------------------------------------------------
+  - screenId: frmHome
+    name: 工作台
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/main
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/main.html
+    x_permission: 无（兜底链要求已认证会话）
+    x_entryRef: ENTRY-index
+    x_note: 纯展示工作台，**无操作功能点、无数据接口调用**（事实：main.html 内无 $.ajax / 无 form action）；模板 main_v1.html（标题「统计」）为 RuoYi 演示仪表盘，其数值为硬编码示例数字，不属本系统真实报表，故不建模。
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ Hello,Guest                          [btnPlatformDoc] 平台说明│
+      │ 移动设备访问请扫描以下二维码：        [btnHome] 系统主页        │
+      │ [imgQrCode]                          ─────────────────────────│
+      │                                      技术选型：               │
+      │ 聚搭OpenAPI系统                       1 核心框架：Spring Boot  │
+      │ （系统简介文本）                      2 安全框架：Apache Shiro │
+      │ 系统名称: [lblVersion]              3 模板引擎：Thymeleaf    │
+      │ ¥免费开源                             4 持久层框架：MyBatis    │
+      │                                      5 定时任务：Quartz       │
+      │                                      6 数据库连接池：Druid    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ ┌ 联系信息 ──────────────┐ ┌ 系统说明 ──────────────────────┐│
+      │ │ 官网 / QQ群 / 微信 /   │ │ 版本更新履历（v4.7.0 ~ v4.8.2）││
+      │ │ 支付宝                 │ │ 折叠面板，默认折叠             ││
+      │ └────────────────────────┘ └────────────────────────────────┘│
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: lblVersion
+        type: LABEL
+        label: 系统名称
+        io: O
+      - id: imgQrCode
+        type: LABEL
+        label: 移动端二维码
+        io: O
+      - id: btnPlatformDoc
+        type: BUTTON
+        label: 平台说明
+      - id: btnHome
+        type: BUTTON
+        label: 系统主页
+    actions: []
+
+  # ---------------------------------------------------------------------------
+  # 5. 个人中心（基本资料 + 修改密码双页签）
+  # ---------------------------------------------------------------------------
+  - screenId: frmProfile
+    name: 个人中心
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/user/profile
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/user/profile/profile.html
+    x_permission: 无（登录用户本人）
+    x_entryRef: 无菜单入口（顶栏下拉 / 左侧用户面板）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 个人中心                                          [btnProfileExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [tabUserInfo 基本资料] [tabModifyPassword 修改密码]           │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 用户名称: [txtUserName]        手机号码: [txtPhonenumber]      │
+      │ 邮箱:     [txtEmail]           性别:     (rdoSexMale)男 (rdoSexFemale)女 │
+      │ [btnUpdateProfile]                                            │
+      ├──────────────────────────────────────────────────────────────┤
+      │ —— 修改密码页签 ——                                            │
+      │ 旧密码:   [txtOldPassword]                                    │
+      │ 新密码:   [txtNewPassword]                                    │
+      │ 确认密码: [txtConfirmPassword]                                │
+      │ [btnUpdatePwd]                                                │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 头像（弹窗查看，见 frmAvatar）: [imgAvatar]                    │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtUserName
+        type: TEXTBOX
+        label: 用户名称
+        io: I_O
+        required: true
+        dataBinding: OBJ-SysUser.userName
+      - id: txtPhonenumber
+        type: TEXTBOX
+        label: 手机号码
+        io: I_O
+        required: true
+        dataBinding: OBJ-SysUser.phonenumber
+        refRules:
+          - name: 手机号格式
+            description: jQuery validate isPhone 规则 + remote 唯一性校验
+            expression: "matches(value, '^1[0-9]{10}$')"
+            violationMessage: 请输入正确的手机号码
+            enforcedAt: ALWAYS
+          - name: 手机号长度
+            description: 模板限制 maxlength=11
+            expression: "len(value) <= 11"
+            violationMessage: 手机号码长度不能超过 11 位
+            enforcedAt: ALWAYS
+      - id: txtEmail
+        type: TEXTBOX
+        label: 邮箱
+        io: I_O
+        required: true
+        dataBinding: OBJ-SysUser.email
+        refRules:
+          - name: 邮箱格式
+            description: jQuery validate email 规则 + remote 唯一性校验
+            expression: "contains(value, '@')"
+            violationMessage: 请输入正确的邮箱地址
+            enforcedAt: ALWAYS
+      - id: rdoSexMale
+        type: CHECKBOX
+        label: 男
+        io: I
+        dataBinding: OBJ-SysUser.sex
+      - id: rdoSexFemale
+        type: CHECKBOX
+        label: 女
+        io: I
+        dataBinding: OBJ-SysUser.sex
+      - id: txtOldPassword
+        type: TEXTBOX
+        label: 旧密码
+        io: I
+        required: true
+        refRules:
+          - name: 原密码必填
+            description: profile.html 修改密码页签 validate rules.oldPassword.required
+            expression: "len(value) > 0"
+            violationMessage: 请输入原密码
+            enforcedAt: ALWAYS
+      - id: txtNewPassword
+        type: TEXTBOX
+        label: 新密码
+        io: I
+        required: true
+        refRules:
+          - name: 新密码必填与范围
+            description: profile.html validate rules；服务端另经 GET /system/user/profile/checkPassword 校验原密码
+            expression: "len(value) >= 6 and len(value) <= 20"
+            violationMessage: 请输入新密码（6-20 位）
+            enforcedAt: ALWAYS
+      - id: txtConfirmPassword
+        type: TEXTBOX
+        label: 确认密码
+        io: I
+        required: true
+        refRules:
+          - name: 两次新密码一致
+            description: profile.html validate rules
+            expression: "value == txtNewPassword"
+            violationMessage: 请再次输入新密码且两次一致
+            enforcedAt: ALWAYS
+      - id: imgAvatar
+        type: LABEL
+        label: 头像
+        io: O
+        dataBinding: OBJ-SysUser.avatar
+      - id: btnUpdateProfile
+        type: BUTTON
+        label: 保存
+      - id: btnUpdatePwd
+        type: BUTTON
+        label: 保存
+      - id: btnProfileExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actProfileSave
+        name: 保存基本资料
+        behaviorRef: SysProfile_UpdateInfo
+        actionType: BUTTON
+        x_interfaceRef: API-SysProfileController-update
+        x_http: "POST /system/user/profile/update"
+        x_permission: 无
+      - actionId: actProfileUpdatePwd
+        name: 保存新密码
+        behaviorRef: SysProfile_UpdatePwd
+        actionType: BUTTON
+        x_interfaceRef: API-SysProfileController-updatePwd
+        x_http: "POST /system/user/profile/updatePwd"
+        x_permission: 无
+      - actionId: actProfileSaveAvatar
+        name: 上传头像
+        behaviorRef: SysProfile_UpdateAvatar
+        actionType: BUTTON
+        x_interfaceRef: API-SysProfileController-updateAvatar
+        x_http: "POST /system/user/profile/updateAvatar"
+        x_permission: 无
+        x_note: 本按钮位于头像弹窗页 frmAvatar，此处引用以覆盖 FUNC-sys-profile-avatar 的界面入口
+
+  # ---------------------------------------------------------------------------
+  # 6. 用户管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysUserList
+    name: 用户列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/user
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/user/user.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/user/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/user/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/user/view.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/user/deptTree.html
+    x_permission: system:user:view
+    x_menuRef: "100"
+    x_layout: 左树右表（ui-layout-west 组织机构 ztree + ui-layout-center 查询/表格）；本系统唯一的 3 列以外结构，特例登记
+    layout: |
+      ┌──────────────────────────────┬───────────────────────────────────┐
+      │ 组织机构          [btnManageDept]│ 用户列表                    [btnExit]│
+      │ [btnTreeExpand][btnTreeCollapse]│ ┌ 查询条件 ─────────────────────┐ │
+      │ [btnTreeRefresh]              │ │ 登录名称:[txtLoginName] 手机号码:[txtPhonenumber] │
+      │ @treeDept（ztree 部门树）      │ │ 用户状态:(cboStatus) 创建时间:{dtpStart}-{dtpEnd} │
+      │  部门A                        │ │ [btnQuery] [btnReset]         │ │
+      │   └ 部门A-1                   │ └───────────────────────────────┘ │
+      │   └ 部门A-2                   │ [btnAdd] [btnEdit] [btnRemove]    │
+      │  ...                          │ [btnImport] [btnExport]           │
+      │                               ├───────────────────────────────────┤
+      │                               │ @grdUserList                      │
+      │                               │  □ | 用户ID | 登录名称 | 用户名称 | 部门 | 邮箱 | 手机 | 用户状态 | 创建时间 | 操作 │
+      │                               │  行内操作: [编辑] [删除] [更多操作 ▸]│
+      │                               │    └ 重置密码 / 分配角色          │
+      │                               │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页] │
+      └──────────────────────────────┴───────────────────────────────────┘
+
+      （点击「新增」/「修改」在**新页签**打开表单页，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增用户 / 修改用户                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │ 基本信息                                                      │
+      │      用户名称: [txtUserName]        归属部门: [pslDeptName]     │
+      │      手机号码: [txtPhonenumber]     邮箱:     [txtEmail]        │
+      │      登录账号: [txtLoginName]       登录密码: [txtPassword]     │
+      │      用户性别: (cboSex)             用户状态: (chkStatus)       │
+      │ 其他信息                                                      │
+      │      岗位: (cboPostMulti)  角色: ☑(chkRoleGrp)                │
+      │      备注: [txtaRemark]                                       │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormSave] [btnFormCancel] [btnFormExit]                   │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: treeDept
+        type: GRID
+        label: 组织机构树
+        io: I
+        dataBinding: OBJ-SysDept.deptName
+        dataSource: QR-SYS-DEPT-001
+      - id: btnManageDept
+        type: BUTTON
+        label: 管理部门
+      - id: btnTreeExpand
+        type: BUTTON
+        label: 展开
+      - id: btnTreeCollapse
+        type: BUTTON
+        label: 折叠
+      - id: btnTreeRefresh
+        type: BUTTON
+        label: 刷新部门
+      - id: txtLoginName
+        type: TEXTBOX
+        label: 登录名称
+        io: I
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtPhonenumber
+        type: TEXTBOX
+        label: 手机号码
+        io: I
+        dataBinding: OBJ-SysUser.phonenumber
+      - id: cboStatus
+        type: COMBO
+        label: 用户状态
+        io: I
+        dataBinding: OBJ-SysUser.status
+      - id: dtpStart
+        type: DATEPICKER
+        label: 创建时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnImport
+        type: BUTTON
+        label: 导入
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: grdUserList
+        type: GRID
+        label: 用户列表
+        io: O
+        dataBinding: OBJ-SysUser.userId
+        dataSource: QR-SYS-USER-001
+      - id: txtUserName
+        type: TEXTBOX
+        label: 用户名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.userName
+        refRules:
+          - name: 用户名称长度
+            description: add.html 限制 maxlength=30
+            expression: "len(value) <= 30"
+            violationMessage: 用户名称长度不能超过 30 位
+            enforcedAt: ALWAYS
+      - id: pslDeptName
+        type: POPUP_SELECT
+        label: 归属部门
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.deptId
+      - id: txtEmail
+        type: TEXTBOX
+        label: 邮箱
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.email
+        refRules:
+          - name: 邮箱格式与唯一
+            description: add.html validate email:true + remote checkEmailUnique（POST /system/user/checkEmailUnique）
+            expression: "contains(value, '@')"
+            violationMessage: 请输入正确的邮箱地址
+            enforcedAt: ALWAYS
+      - id: txtLoginName
+        type: TEXTBOX
+        label: 登录账号
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.loginName
+        refRules:
+          - name: 登录账号长度
+            description: add.html validate minlength=2 / maxlength=20 + remote checkLoginNameUnique
+            expression: "len(value) >= 2 and len(value) <= 20"
+            violationMessage: 登录账号长度必须介于 2 和 20 之间
+            enforcedAt: ALWAYS
+      - id: txtPassword
+        type: TEXTBOX
+        label: 登录密码
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.password
+        refRules:
+          - name: 初始密码默认值
+            description: add.html 初值取系统参数 sys.user.initPassword；修改页不可编辑登录名
+            expression: "len(value) >= 5 and len(value) <= 20"
+            violationMessage: 登录密码长度必须介于 5 和 20 之间
+            enforcedAt: ALWAYS
+      - id: cboSex
+        type: COMBO
+        label: 用户性别
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.sex
+      - id: chkStatus
+        type: CHECKBOX
+        label: 用户状态
+        io: I
+        dataBinding: OBJ-SysUser.status
+        refRules:
+          - name: 状态开关取值换算
+            description: toggle-switch 开关型 checkbox，提交时勾选=0（正常）、未勾选=1（停用）；模板事实
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: cboPostMulti
+        type: COMBO
+        label: 岗位
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.postIds
+        refRules:
+          - name: 岗位多选
+            description: select2-multiple 多选下拉，选项来自 OBJ-SysPost 集合，停用岗位 disabled
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: chkRoleGrp
+        type: CHECKBOX
+        label: 角色
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.roleIds
+        refRules:
+          - name: 角色复选框组
+            description: name=role 的复选框组，选项来自 OBJ-SysRole 集合，停用角色 disabled
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysUser.remark
+        refRules:
+          - name: 备注长度
+            description: add.html 限制 maxlength=500
+            expression: "len(value) <= 500"
+            violationMessage: 备注长度不能超过 500 位
+            enforcedAt: ALWAYS
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actUserQuery
+        name: 搜索
+        behaviorRef: SysUser_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-list
+        x_http: "POST /system/user/list"
+        x_permission: system:user:list
+      - actionId: actUserReset
+        name: 重置
+        behaviorRef: SysUser_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（resetPre()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actUserTreeLoad
+        name: 加载部门树
+        behaviorRef: SysUser_QueryDeptTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-deptTreeData
+        x_http: "GET /system/user/deptTreeData"
+        x_permission: 无
+      - actionId: actUserOpenManageDept
+        name: 管理部门
+        behaviorRef: SysDept_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: 页面跳转（$.modal.openTab）
+        x_http: "GET /system/dept"
+        x_permission: 无
+      - actionId: actUserAdd
+        name: 新增
+        behaviorRef: SysUser_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-add
+        x_http: "GET /system/user/add（表单页）→ POST /system/user/add（保存）"
+        x_permission: system:user:add
+      - actionId: actUserEdit
+        name: 修改
+        behaviorRef: SysUser_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-edit
+        x_http: "GET /system/user/edit/{userId}（表单页）→ POST /system/user/edit（保存）"
+        x_permission: system:user:edit
+      - actionId: actUserRemove
+        name: 删除
+        behaviorRef: SysUser_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-remove
+        x_http: "POST /system/user/remove"
+        x_permission: system:user:remove
+      - actionId: actUserImport
+        name: 导入
+        behaviorRef: SysUser_ImportData
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-importData
+        x_http: "POST /system/user/importData"
+        x_permission: system:user:import
+      - actionId: actUserImportTemplate
+        name: 下载模板
+        behaviorRef: SysUser_ImportTemplate
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-importTemplate
+        x_http: "POST /system/user/importTemplate"
+        x_permission: system:user:view
+      - actionId: actUserExport
+        name: 导出
+        behaviorRef: SysUser_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-export
+        x_http: "POST /system/user/export → GET /common/download"
+        x_permission: system:user:export
+      - actionId: actUserChangeStatus
+        name: 启用/停用
+        behaviorRef: SysUser_ChangeStatus
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-changeStatus
+        x_http: "POST /system/user/changeStatus"
+        x_permission: system:user:edit
+      - actionId: actUserResetPwd
+        name: 重置密码
+        behaviorRef: SysUser_ResetPwd
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-resetPwd
+        x_http: "GET /system/user/resetPwd/{userId}（弹窗）→ POST /system/user/resetPwd（保存）"
+        x_permission: system:user:resetPwd
+      - actionId: actUserAuthRole
+        name: 分配角色
+        behaviorRef: SysUser_AuthRole
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-insertAuthRole
+        x_http: "GET /system/user/authRole/{userId}（页签）→ POST /system/user/authRole/insertAuthRole（保存）"
+        x_permission: system:user:edit
+      - actionId: actUserView
+        name: 查看用户详情
+        behaviorRef: SysUser_QueryDetail
+        actionType: BUTTON
+        x_interfaceRef: API-SysUserController-view
+        x_http: "GET /system/user/view/{userId}"
+        x_permission: 无（模板未加 shiro 标签）
+      - actionId: actUserFormSave
+        name: 保存
+        behaviorRef: SysUser_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysUserController-addSave / API-SysUserController-editSave
+        x_http: "POST /system/user/add 或 POST /system/user/edit"
+        x_permission: system:user:add / system:user:edit
+      - actionId: actUserFormCancel
+        name: 关闭
+        behaviorRef: SysUser_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 7. 角色管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysRoleList
+    name: 角色列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/role
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/role.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/dataScope.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/authUser.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/role/selectUser.html
+    x_permission: system:role:view
+    x_menuRef: "101"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 角色列表                                            [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 角色名称:[txtRoleName] 权限字符:[txtRoleKey] 角色状态:(cboStatus)│
+      │ 创建时间:{dtpStart}-{dtpEnd}                                  │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport]                    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdRoleList                                                  │
+      │  □ | 角色编号 | 角色名称 | 权限字符 | 数据权限 | 显示顺序 | 角色状态 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除] [更多操作 ▸]                          │
+      │    └ 数据权限 / 分配用户                                      │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「修改」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增角色 / 修改角色                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      角色名称: [txtRoleName]        权限字符: [txtRoleKey]      │
+      │      显示顺序: [txtRoleSort]        状态:     (chkStatus)       │
+      │      备注:     [txtaRemark]                                    │
+      │      菜单权限: ☑(chkTreeExpand)展开/折叠 ☑(chkTreeCheckAll)全选/全不选 ☑(chkTreeCascade)父子联动 │
+      │                @treeMenu（ztree 复选框菜单树）                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+
+      （行内「数据权限」弹窗）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 角色数据权限                                                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 角色名称: [txtRoleNameRO]  权限字符: [txtRoleKeyRO]            │
+      │ 数据范围: (cboDataScope)   ← 选择「自定义数据权限」时显示下区   │
+      │ 数据权限: ☑(chkDeptExpand)展开/折叠 ☑(chkDeptCheckAll)全选/全不选 ☑(chkDeptCascade)父子联动 │
+      │           @treeDeptAuth（ztree 复选框部门树）                  │
+      └──────────────────────────────────────────────────────────────┘
+
+      （行内「分配用户」页签）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 角色分配用户                                                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 登录名称:[txtLoginName] 手机号码:[txtPhonenumber]              │
+      │ [btnQuery] [btnReset]                                         │
+      │ [btnAddUser] [btnCancelAuthAll] [btnExit]                     │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdAllocatedUser                                             │
+      │  □ | 用户ID | 登录名称 | 用户名称 | 邮箱 | 手机 | 用户状态 | 创建时间 | 操作 │
+      │  行内操作: [取消授权]                                          │
+      │ [分页]                                                        │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtRoleName
+        type: TEXTBOX
+        label: 角色名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysRole.roleName
+      - id: txtRoleKey
+        type: TEXTBOX
+        label: 权限字符
+        io: I
+        required: true
+        dataBinding: OBJ-SysRole.roleKey
+      - id: cboStatus
+        type: COMBO
+        label: 角色状态
+        io: I
+        dataBinding: OBJ-SysRole.status
+      - id: dtpStart
+        type: DATEPICKER
+        label: 创建时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdRoleList
+        type: GRID
+        label: 角色列表
+        io: O
+        dataBinding: OBJ-SysRole.roleId
+        dataSource: QR-SYS-ROLE-001
+      - id: txtRoleSort
+        type: NUMBER
+        label: 显示顺序
+        io: I
+        required: true
+        dataBinding: OBJ-SysRole.roleSort
+        refRules:
+          - name: 显示顺序为数字
+            description: add.html validate digits:true
+            expression: "isNumber(value)"
+            violationMessage: 显示顺序必须为数字
+            enforcedAt: ALWAYS
+      - id: chkStatus
+        type: CHECKBOX
+        label: 状态
+        io: I
+        dataBinding: OBJ-SysRole.status
+        refRules:
+          - name: 状态开关取值换算
+            description: toggle-switch 开关型 checkbox，勾选=0（正常）、未勾选=1（停用）；模板事实
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysRole.remark
+      - id: chkTreeExpand
+        type: CHECKBOX
+        label: 展开/折叠
+        io: I
+      - id: chkTreeCheckAll
+        type: CHECKBOX
+        label: 全选/全不选
+        io: I
+      - id: chkTreeCascade
+        type: CHECKBOX
+        label: 父子联动
+        io: I
+      - id: treeMenu
+        type: GRID
+        label: 菜单权限树
+        io: I_O
+        dataBinding: OBJ-SysMenu.menuId
+        dataSource: QR-SYS-MENU-001
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+      - id: txtRoleNameRO
+        type: TEXTBOX
+        label: 角色名称
+        io: O
+        required: false
+        dataBinding: OBJ-SysRole.roleName
+      - id: txtRoleKeyRO
+        type: TEXTBOX
+        label: 权限字符
+        io: O
+        required: false
+        dataBinding: OBJ-SysRole.roleKey
+      - id: cboDataScope
+        type: COMBO
+        label: 数据范围
+        io: I
+        required: false
+        dataBinding: OBJ-SysRole.dataScope
+        refRules:
+          - name: 自定义数据权限联动
+            description: 仅当 dataScope=='2'（自定义数据权限）时显示下方部门树（模板 th:style 判定）
+            expression: "value == '2'"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: chkDeptExpand
+        type: CHECKBOX
+        label: 展开/折叠
+        io: I
+      - id: chkDeptCheckAll
+        type: CHECKBOX
+        label: 全选/全不选
+        io: I
+      - id: chkDeptCascade
+        type: CHECKBOX
+        label: 父子联动
+        io: I
+      - id: treeDeptAuth
+        type: GRID
+        label: 数据权限部门树
+        io: I_O
+        dataBinding: OBJ-SysDept.deptId
+        dataSource: QR-SYS-DEPT-001
+      - id: txtLoginName
+        type: TEXTBOX
+        label: 登录名称
+        io: I
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtPhonenumber
+        type: TEXTBOX
+        label: 手机号码
+        io: I
+        dataBinding: OBJ-SysUser.phonenumber
+      - id: btnAddUser
+        type: BUTTON
+        label: 添加用户
+      - id: btnCancelAuthAll
+        type: BUTTON
+        label: 批量取消授权
+      - id: grdAllocatedUser
+        type: GRID
+        label: 已分配用户列表
+        io: O
+        dataBinding: OBJ-SysUser.userId
+        dataSource: QR-SYS-USER-001
+    actions:
+      - actionId: actRoleQuery
+        name: 搜索
+        behaviorRef: SysRole_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-list
+        x_http: "POST /system/role/list"
+        x_permission: system:role:list
+      - actionId: actRoleReset
+        name: 重置
+        behaviorRef: SysRole_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actRoleAdd
+        name: 新增
+        behaviorRef: SysRole_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-add
+        x_http: "GET /system/role/add → POST /system/role/add"
+        x_permission: system:role:add
+      - actionId: actRoleEdit
+        name: 修改
+        behaviorRef: SysRole_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-edit
+        x_http: "GET /system/role/edit/{roleId} → POST /system/role/edit"
+        x_permission: system:role:edit
+      - actionId: actRoleRemove
+        name: 删除
+        behaviorRef: SysRole_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-remove
+        x_http: "POST /system/role/remove"
+        x_permission: system:role:remove
+      - actionId: actRoleExport
+        name: 导出
+        behaviorRef: SysRole_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-export
+        x_http: "POST /system/role/export"
+        x_permission: system:role:export
+      - actionId: actRoleChangeStatus
+        name: 启用/停用
+        behaviorRef: SysRole_ChangeStatus
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-changeStatus
+        x_http: "POST /system/role/changeStatus"
+        x_permission: system:role:edit
+      - actionId: actRoleAuthDataScope
+        name: 数据权限
+        behaviorRef: SysRole_AuthDataScope
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-authDataScopeSave
+        x_http: "GET /system/role/authDataScope/{roleId}（弹窗）→ POST /system/role/authDataScope（保存）"
+        x_permission: system:role:edit
+      - actionId: actRoleLoadMenuTree
+        name: 加载菜单树
+        behaviorRef: SysRole_QueryMenuTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-selectMenuTree
+        x_http: "GET /system/menu/roleMenuTreeData"
+        x_permission: 无
+      - actionId: actRoleLoadDeptTree
+        name: 加载部门树
+        behaviorRef: SysRole_QueryDeptTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-deptTreeData
+        x_http: "GET /system/role/deptTreeData"
+        x_permission: 无
+      - actionId: actRoleAuthUser
+        name: 分配用户
+        behaviorRef: SysRole_AuthUser
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-selectUser
+        x_http: "GET /system/role/authUser/{roleId}（页签）"
+        x_permission: system:role:edit
+      - actionId: actRoleAllocatedQuery
+        name: 搜索已分配用户
+        behaviorRef: SysRole_QueryAllocatedUser
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-allocatedList
+        x_http: "POST /system/role/authUser/allocatedList"
+        x_permission: system:role:edit
+      - actionId: actRoleAddUser
+        name: 添加用户
+        behaviorRef: SysRole_SelectUser
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-selectUser
+        x_http: "GET /system/role/authUser/selectUser/{roleId}（弹窗）"
+        x_permission: system:role:add
+      - actionId: actRoleCancelAuthUser
+        name: 取消授权
+        behaviorRef: SysRole_CancelAuthUser
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-cancelAuthUser
+        x_http: "POST /system/role/authUser/cancel"
+        x_permission: system:role:remove
+      - actionId: actRoleCancelAuthUserAll
+        name: 批量取消授权
+        behaviorRef: SysRole_CancelAuthUserAll
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-cancelAuthUserAll
+        x_http: "POST /system/role/authUser/cancelAll"
+        x_permission: system:role:remove
+      - actionId: actRoleFormClose
+        name: 关闭
+        behaviorRef: SysRole_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 8. 菜单管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysMenuList
+    name: 菜单列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/menu
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/menu/menu.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/menu/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/menu/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/menu/tree.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/menu/icon.html
+    x_permission: system:menu:view
+    x_menuRef: "102"
+    x_note: 列表为**树表格**（bootstrap-tree-table，非 bootstrap-table），故排序列在表格内以可编辑输入框呈现，并配「保存排序」按钮
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 菜单列表                                            [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 菜单名称:[txtMenuName]  菜单状态:(cboVisible)                 │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnSaveSort] [btnExpandAll]               │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdMenuTree（树表格）                                         │
+      │  ○ | 菜单名称 | 排序 | 请求地址 | 类型 | 可见 | 权限标识 | 操作   │
+      │  行内操作: [编辑] [新增] [删除]                                │
+      │  （排序列内联输入框 → [btnSaveSort] → POST /system/menu/updateSort）│
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增菜单 / 修改菜单                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      上级菜单: [pslParentMenu]                                │
+      │      菜单类型: (rdoTypeDir)目录 (rdoTypeMenu)菜单 (rdoTypeBtn)按钮│
+      │      菜单名称: [txtMenuName]        请求地址: [txtUrl]         │
+      │      打开方式: (cboTarget)          权限标识: [txtPerms]        │
+      │      显示排序: [txtOrderNum]        图标:     [pslIcon]        │
+      │      菜单状态: (rdoVisibleShow)显示 (rdoVisibleHide)隐藏        │
+      │      是否刷新: (rdoRefreshNo)否 (rdoRefreshYes)是              │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtMenuName
+        type: TEXTBOX
+        label: 菜单名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysMenu.menuName
+      - id: cboVisible
+        type: COMBO
+        label: 菜单状态
+        io: I
+        dataBinding: OBJ-SysMenu.visible
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnSaveSort
+        type: BUTTON
+        label: 保存排序
+      - id: btnExpandAll
+        type: BUTTON
+        label: 展开/折叠
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdMenuTree
+        type: GRID
+        label: 菜单树表格
+        io: I_O
+        dataBinding: OBJ-SysMenu.menuId
+        dataSource: QR-SYS-MENU-001
+      - id: pslParentMenu
+        type: POPUP_SELECT
+        label: 上级菜单
+        io: I
+        required: false
+        dataBinding: OBJ-SysMenu.parentId
+      - id: rdoTypeDir
+        type: CHECKBOX
+        label: 目录
+        io: I
+        dataBinding: OBJ-SysMenu.menuType
+      - id: rdoTypeMenu
+        type: CHECKBOX
+        label: 菜单
+        io: I
+        dataBinding: OBJ-SysMenu.menuType
+      - id: rdoTypeBtn
+        type: CHECKBOX
+        label: 按钮
+        io: I
+        dataBinding: OBJ-SysMenu.menuType
+      - id: txtUrl
+        type: TEXTBOX
+        label: 请求地址
+        io: I
+        required: false
+        dataBinding: OBJ-SysMenu.url
+      - id: cboTarget
+        type: COMBO
+        label: 打开方式
+        io: I
+        required: false
+        dataBinding: OBJ-SysMenu.target
+      - id: txtPerms
+        type: TEXTBOX
+        label: 权限标识
+        io: I
+        required: false
+        dataBinding: OBJ-SysMenu.perms
+      - id: txtOrderNum
+        type: NUMBER
+        label: 显示排序
+        io: I
+        required: true
+        dataBinding: OBJ-SysMenu.orderNum
+        refRules:
+          - name: 排序为数字
+            description: add.html validate digits:true
+            expression: "isNumber(value)"
+            violationMessage: 显示排序必须为数字
+            enforcedAt: ALWAYS
+      - id: pslIcon
+        type: TEXTBOX
+        label: 图标
+        io: I
+        required: false
+        dataBinding: OBJ-SysMenu.icon
+        refRules:
+          - name: 图标选择器回填
+            description: 点击图标输入框弹出 FontAwesome 图标面板（templates/system/menu/icon.html），选择后写入 class 名
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: rdoVisibleShow
+        type: CHECKBOX
+        label: 显示
+        io: I
+        dataBinding: OBJ-SysMenu.visible
+      - id: rdoVisibleHide
+        type: CHECKBOX
+        label: 隐藏
+        io: I
+        dataBinding: OBJ-SysMenu.visible
+      - id: rdoRefreshNo
+        type: CHECKBOX
+        label: 否
+        io: I
+        dataBinding: OBJ-SysMenu.isRefresh
+      - id: rdoRefreshYes
+        type: CHECKBOX
+        label: 是
+        io: I
+        dataBinding: OBJ-SysMenu.isRefresh
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actMenuQuery
+        name: 搜索
+        behaviorRef: SysMenu_QueryTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-list
+        x_http: "POST /system/menu/list"
+        x_permission: system:menu:list
+      - actionId: actMenuReset
+        name: 重置
+        behaviorRef: SysMenu_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actMenuAdd
+        name: 新增
+        behaviorRef: SysMenu_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-add
+        x_http: "GET /system/menu/add/{parentId} → POST /system/menu/add"
+        x_permission: system:menu:add
+      - actionId: actMenuEdit
+        name: 修改
+        behaviorRef: SysMenu_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-edit
+        x_http: "GET /system/menu/edit/{menuId} → POST /system/menu/edit"
+        x_permission: system:menu:edit
+      - actionId: actMenuRemove
+        name: 删除
+        behaviorRef: SysMenu_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-remove
+        x_http: "GET /system/menu/remove/{menuId}"
+        x_permission: system:menu:remove
+      - actionId: actMenuSaveSort
+        name: 保存排序
+        behaviorRef: SysMenu_UpdateSort
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-updateSort
+        x_http: "POST /system/menu/updateSort"
+        x_permission: 无（模板未加 shiro 标签，属权限覆盖缺口）
+      - actionId: actMenuSelectParent
+        name: 选择上级菜单
+        behaviorRef: SysMenu_QueryParentTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysMenuController-selectMenuTree
+        x_http: "GET /system/menu/selectMenuTree/{menuId}"
+        x_permission: 无
+      - actionId: actMenuFormSave
+        name: 保存
+        behaviorRef: SysMenu_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysMenuController-addSave / API-SysMenuController-editSave
+        x_http: "POST /system/menu/add 或 POST /system/menu/edit"
+        x_permission: system:menu:add / system:menu:edit
+      - actionId: actMenuFormClose
+        name: 关闭
+        behaviorRef: SysMenu_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 9. 部门管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysDeptList
+    name: 部门列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/dept
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dept/dept.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dept/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dept/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dept/tree.html
+    x_permission: system:dept:view
+    x_menuRef: "103"
+    x_note: 列表为**树表格**（bootstrap-tree-table）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 部门列表                                            [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 部门名称:[txtDeptName]  部门状态:(cboStatus)                   │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnExpandAll]                             │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdDeptTree（树表格）                                         │
+      │  ○ | 部门名称 | 排序 | 状态 | 创建时间 | 操作                   │
+      │  行内操作: [编辑] [新增] [删除]（顶级节点不显示操作按钮）        │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增部门 / 修改部门                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      上级部门: [pslParentDept]                                │
+      │      部门名称: [txtDeptName]        显示排序: [txtOrderNum]    │
+      │      负责人:   [txtLeader]          联系电话: [txtPhone]       │
+      │      邮箱:     [txtEmail]                                     │
+      │      部门状态: (rdoStatusNormal)正常 (rdoStatusDisabled)停用   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtDeptName
+        type: TEXTBOX
+        label: 部门名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysDept.deptName
+      - id: cboStatus
+        type: COMBO
+        label: 部门状态
+        io: I
+        dataBinding: OBJ-SysDept.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnExpandAll
+        type: BUTTON
+        label: 展开/折叠
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdDeptTree
+        type: GRID
+        label: 部门树表格
+        io: I_O
+        dataBinding: OBJ-SysDept.deptId
+        dataSource: QR-SYS-DEPT-001
+      - id: pslParentDept
+        type: POPUP_SELECT
+        label: 上级部门
+        io: I
+        required: true
+        dataBinding: OBJ-SysDept.parentId
+        refRules:
+          - name: 上级部门可选择
+            description: 修改页排除自身与其子孙（excludeId），模板另调 $.tree.notAllowLastLevel(tree) 禁止选择末级
+            expression: "true"
+            violationMessage: 父部门不能选择
+            enforcedAt: ALWAYS
+      - id: txtOrderNum
+        type: NUMBER
+        label: 显示排序
+        io: I
+        required: true
+        dataBinding: OBJ-SysDept.orderNum
+        refRules:
+          - name: 排序为数字
+            description: add.html validate digits:true
+            expression: "isNumber(value)"
+            violationMessage: 显示排序必须为数字
+            enforcedAt: ALWAYS
+      - id: txtLeader
+        type: TEXTBOX
+        label: 负责人
+        io: I
+        required: false
+        dataBinding: OBJ-SysDept.leader
+      - id: txtPhone
+        type: TEXTBOX
+        label: 联系电话
+        io: I
+        required: false
+        dataBinding: OBJ-SysDept.phone
+        refRules:
+          - name: 联系电话格式
+            description: add.html validate isPhone:true
+            expression: "matches(value, '^1[0-9]{10}$')"
+            violationMessage: 请输入正确的联系电话
+            enforcedAt: ALWAYS
+      - id: txtEmail
+        type: TEXTBOX
+        label: 邮箱
+        io: I
+        required: false
+        dataBinding: OBJ-SysDept.email
+        refRules:
+          - name: 邮箱格式
+            description: add.html validate email:true
+            expression: "contains(value, '@')"
+            violationMessage: 请输入正确的邮箱地址
+            enforcedAt: ALWAYS
+      - id: rdoStatusNormal
+        type: CHECKBOX
+        label: 正常
+        io: I
+        dataBinding: OBJ-SysDept.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 停用
+        io: I
+        dataBinding: OBJ-SysDept.status
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actDeptQuery
+        name: 搜索
+        behaviorRef: SysDept_QueryTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysDeptController-list
+        x_http: "POST /system/dept/list"
+        x_permission: system:dept:list
+      - actionId: actDeptReset
+        name: 重置
+        behaviorRef: SysDept_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actDeptAdd
+        name: 新增
+        behaviorRef: SysDept_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysDeptController-add
+        x_http: "GET /system/dept/add/{parentId} → POST /system/dept/add"
+        x_permission: system:dept:add
+      - actionId: actDeptEdit
+        name: 修改
+        behaviorRef: SysDept_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysDeptController-edit
+        x_http: "GET /system/dept/edit/{deptId} → POST /system/dept/edit"
+        x_permission: system:dept:edit
+      - actionId: actDeptRemove
+        name: 删除
+        behaviorRef: SysDept_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysDeptController-remove
+        x_http: "GET /system/dept/remove/{deptId}"
+        x_permission: system:dept:remove
+      - actionId: actDeptSelectParent
+        name: 选择上级部门
+        behaviorRef: SysDept_QueryParentTree
+        actionType: BUTTON
+        x_interfaceRef: API-SysDeptController-selectDeptTree
+        x_http: "GET /system/dept/selectDeptTree/{deptId}/{excludeId}"
+        x_permission: 无
+      - actionId: actDeptFormSave
+        name: 保存
+        behaviorRef: SysDept_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysDeptController-addSave / API-SysDeptController-editSave
+        x_http: "POST /system/dept/add 或 POST /system/dept/edit"
+        x_permission: system:dept:add / system:dept:edit
+      - actionId: actDeptFormClose
+        name: 关闭
+        behaviorRef: SysDept_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 10. 岗位管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysPostList
+    name: 岗位列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/post
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/post/post.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/post/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/post/edit.html
+    x_permission: system:post:view
+    x_menuRef: "104"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 岗位列表                                            [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 岗位编码:[txtPostCode] 岗位名称:[txtPostName] 岗位状态:(cboStatus)│
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport]                    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdPostList                                                  │
+      │  □ | 岗位编号 | 岗位编码 | 岗位名称 | 显示顺序 | 状态 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除]                                       │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增岗位 / 修改岗位                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      岗位名称: [txtPostName]        岗位编码: [txtPostCode]     │
+      │      显示顺序: [txtPostSort]        岗位状态: (rdoStatusNormal)正常 (rdoStatusDisabled)停用 │
+      │      备注: [txtaRemark]                                       │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtPostCode
+        type: TEXTBOX
+        label: 岗位编码
+        io: I
+        dataBinding: OBJ-SysPost.postCode
+      - id: txtPostName
+        type: TEXTBOX
+        label: 岗位名称
+        io: I
+        dataBinding: OBJ-SysPost.postName
+      - id: cboStatus
+        type: COMBO
+        label: 岗位状态
+        io: I
+        dataBinding: OBJ-SysPost.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdPostList
+        type: GRID
+        label: 岗位列表
+        io: O
+        dataBinding: OBJ-SysPost.postId
+        dataSource: QR-SYS-POST-001
+      - id: txtPostName
+        type: TEXTBOX
+        label: 岗位名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysPost.postName
+      - id: txtPostCode
+        type: TEXTBOX
+        label: 岗位编码
+        io: I
+        required: true
+        dataBinding: OBJ-SysPost.postCode
+      - id: txtPostSort
+        type: NUMBER
+        label: 显示顺序
+        io: I
+        required: true
+        dataBinding: OBJ-SysPost.postSort
+        refRules:
+          - name: 排序为数字
+            description: add.html validate digits:true
+            expression: "isNumber(value)"
+            violationMessage: 显示顺序必须为数字
+            enforcedAt: ALWAYS
+      - id: rdoStatusNormal
+        type: CHECKBOX
+        label: 正常
+        io: I
+        dataBinding: OBJ-SysPost.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 停用
+        io: I
+        dataBinding: OBJ-SysPost.status
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysPost.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actPostQuery
+        name: 搜索
+        behaviorRef: SysPost_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysPostController-list
+        x_http: "POST /system/post/list"
+        x_permission: system:post:list
+      - actionId: actPostReset
+        name: 重置
+        behaviorRef: SysPost_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actPostAdd
+        name: 新增
+        behaviorRef: SysPost_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysPostController-add
+        x_http: "GET /system/post/add → POST /system/post/add"
+        x_permission: system:post:add
+      - actionId: actPostEdit
+        name: 修改
+        behaviorRef: SysPost_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysPostController-edit
+        x_http: "GET /system/post/edit/{postId} → POST /system/post/edit"
+        x_permission: system:post:edit
+      - actionId: actPostRemove
+        name: 删除
+        behaviorRef: SysPost_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysPostController-remove
+        x_http: "POST /system/post/remove"
+        x_permission: system:post:remove
+      - actionId: actPostExport
+        name: 导出
+        behaviorRef: SysPost_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysPostController-export
+        x_http: "POST /system/post/export"
+        x_permission: system:post:export
+      - actionId: actPostFormSave
+        name: 保存
+        behaviorRef: SysPost_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysPostController-addSave / API-SysPostController-editSave
+        x_http: "POST /system/post/add 或 POST /system/post/edit"
+        x_permission: system:post:add / system:post:edit
+      - actionId: actPostFormClose
+        name: 关闭
+        behaviorRef: SysPost_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 11. 字典类型（字典管理）
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysDictTypeList
+    name: 字典类型列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/dict
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/type/type.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/type/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/type/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/type/tree.html
+    x_permission: system:dict:view
+    x_menuRef: "105"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 字典类型列表                                        [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 字典名称:[txtDictName] 字典类型:[txtDictType]                  │
+      │ 字典状态:(cboStatus) 创建时间:{dtpStart}-{dtpEnd}             │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport] [btnRefreshCache]  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdDictTypeList                                              │
+      │  □ | 字典主键 | 字典名称 | 字典类型 | 状态 | 备注 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [列表] [删除]                                │
+      │   （「列表」打开字典数据页签 → frmSysDictDataList）             │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增字典类型 / 修改字典类型                        [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      字典名称: [txtDictName]        字典类型: [txtDictType]     │
+      │      状态:     (rdoStatusNormal)正常 (rdoStatusDisabled)停用   │
+      │      备注:     [txtaRemark]                                   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtDictName
+        type: TEXTBOX
+        label: 字典名称
+        io: I
+        dataBinding: OBJ-SysDictType.dictName
+      - id: txtDictType
+        type: TEXTBOX
+        label: 字典类型
+        io: I
+        dataBinding: OBJ-SysDictType.dictType
+      - id: cboStatus
+        type: COMBO
+        label: 字典状态
+        io: I
+        dataBinding: OBJ-SysDictType.status
+      - id: dtpStart
+        type: DATEPICKER
+        label: 创建时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnRefreshCache
+        type: BUTTON
+        label: 刷新缓存
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdDictTypeList
+        type: GRID
+        label: 字典类型列表
+        io: O
+        dataBinding: OBJ-SysDictType.dictId
+        dataSource: QR-SYS-DICTTYPE-001
+      - id: txtDictName
+        type: TEXTBOX
+        label: 字典名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictType.dictName
+      - id: txtDictType
+        type: TEXTBOX
+        label: 字典类型
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictType.dictType
+      - id: rdoStatusNormal
+        type: CHECKBOX
+        label: 正常
+        io: I
+        dataBinding: OBJ-SysDictType.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 停用
+        io: I
+        dataBinding: OBJ-SysDictType.status
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysDictType.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actDictTypeQuery
+        name: 搜索
+        behaviorRef: SysDictType_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-list
+        x_http: "POST /system/dict/list"
+        x_permission: system:dict:view
+      - actionId: actDictTypeReset
+        name: 重置
+        behaviorRef: SysDictType_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actDictTypeAdd
+        name: 新增
+        behaviorRef: SysDictType_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-add
+        x_http: "GET /system/dict/add → POST /system/dict/add"
+        x_permission: system:dict:add
+      - actionId: actDictTypeEdit
+        name: 修改
+        behaviorRef: SysDictType_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-edit
+        x_http: "GET /system/dict/edit/{dictId} → POST /system/dict/edit"
+        x_permission: system:dict:edit
+      - actionId: actDictTypeRemove
+        name: 删除
+        behaviorRef: SysDictType_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-remove
+        x_http: "POST /system/dict/remove"
+        x_permission: system:dict:remove
+      - actionId: actDictTypeExport
+        name: 导出
+        behaviorRef: SysDictType_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-export
+        x_http: "POST /system/dict/export"
+        x_permission: system:dict:export
+      - actionId: actDictTypeOpenData
+        name: 列表（打开字典数据）
+        behaviorRef: SysDictData_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-detail
+        x_http: "GET /system/dict/detail/{dictId}（页签，跳转 frmSysDictDataList）"
+        x_permission: system:dict:list
+      - actionId: actDictTypeRefreshCache
+        name: 刷新缓存
+        behaviorRef: SysDictType_RefreshCache
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictTypeController-refreshCache
+        x_http: "GET /system/dict/refreshCache"
+        x_permission: system:dict:remove
+        x_note: 模板 shiro:hasPermission 复用 system:dict:remove 权限码（事实）
+      - actionId: actDictTypeFormSave
+        name: 保存
+        behaviorRef: SysDictType_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysDictTypeController-addSave / API-SysDictTypeController-editSave
+        x_http: "POST /system/dict/add 或 POST /system/dict/edit"
+        x_permission: system:dict:add / system:dict:edit
+      - actionId: actDictTypeFormClose
+        name: 关闭
+        behaviorRef: SysDictType_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 12. 字典数据
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysDictDataList
+    name: 字典数据列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/dict/data
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/data/data.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/data/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/dict/data/edit.html
+    x_permission: system:dict:list
+    x_menuRef: "1051"
+    x_note: 本屏由字典类型列表行内「列表」按钮经 $.modal.openTab 打开，非独立菜单（事实：type.html detail()）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 字典数据列表                                        [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 字典名称:(cboDictType) 字典标签:[txtDictLabel]                 │
+      │ 数据状态:(cboStatus)                                          │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport] [btnClose]         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdDictDataList                                              │
+      │  □ | 字典编码 | 字典标签 | 字典键值 | 字典排序 | 状态 | 备注 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除]                                       │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增字典数据 / 修改字典数据                        [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      字典标签: [txtDictLabel]       字典键值: [txtDictValue]   │
+      │      字典类型: [txtDictTypeRO]      样式属性: [txtCssClass]    │
+      │      字典排序: [txtDictSort]        回显样式: (cboListClass)   │
+      │      系统默认: (rdoIsDefaultYes)是 (rdoIsDefaultNo)否          │
+      │      状态:     (rdoStatusNormal)正常 (rdoStatusDisabled)停用   │
+      │      备注:     [txtaRemark]                                   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: cboDictType
+        type: COMBO
+        label: 字典名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictData.dictType
+        refRules:
+          - name: 必选字典类型
+            description: 字典数据列表按 dictType 过滤；data.html 覆写 queryParams 追加 search.dictType
+            expression: "len(value) > 0"
+            violationMessage: 请先选择字典类型
+            enforcedAt: ALWAYS
+      - id: txtDictLabel
+        type: TEXTBOX
+        label: 字典标签
+        io: I
+        dataBinding: OBJ-SysDictData.dictLabel
+      - id: cboStatus
+        type: COMBO
+        label: 数据状态
+        io: I
+        dataBinding: OBJ-SysDictData.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnClose
+        type: BUTTON
+        label: 关闭
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdDictDataList
+        type: GRID
+        label: 字典数据列表
+        io: O
+        dataBinding: OBJ-SysDictData.dictCode
+        dataSource: QR-SYS-DICTDATA-001
+      - id: txtDictLabel
+        type: TEXTBOX
+        label: 字典标签
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictData.dictLabel
+      - id: txtDictValue
+        type: TEXTBOX
+        label: 字典键值
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictData.dictValue
+      - id: txtDictTypeRO
+        type: TEXTBOX
+        label: 字典类型
+        io: O
+        required: false
+        dataBinding: OBJ-SysDictData.dictType
+      - id: txtCssClass
+        type: TEXTBOX
+        label: 样式属性
+        io: I
+        required: false
+        dataBinding: OBJ-SysDictData.cssClass
+      - id: txtDictSort
+        type: NUMBER
+        label: 字典排序
+        io: I
+        required: true
+        dataBinding: OBJ-SysDictData.dictSort
+        refRules:
+          - name: 排序为数字
+            description: add.html validate rules.dictSort.digits = true
+            expression: "isNumber(value)"
+            violationMessage: 字典排序必须为数字
+            enforcedAt: ALWAYS
+      - id: cboListClass
+        type: COMBO
+        label: 回显样式
+        io: I
+        required: false
+        dataBinding: OBJ-SysDictData.listClass
+        refRules:
+          - name: 回显样式取值
+            description: 模板硬编码选项 default/primary/success/info/warning/danger（表格字典列 badge 样式）
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: rdoIsDefaultYes
+        type: CHECKBOX
+        label: 是
+        io: I
+        dataBinding: OBJ-SysDictData.isDefault
+      - id: rdoIsDefaultNo
+        type: CHECKBOX
+        label: 否
+        io: I
+        dataBinding: OBJ-SysDictData.isDefault
+      - id: rdoStatusNormal
+        type: CHECKBOX
+        label: 正常
+        io: I
+        dataBinding: OBJ-SysDictData.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 停用
+        io: I
+        dataBinding: OBJ-SysDictData.status
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysDictData.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actDictDataQuery
+        name: 搜索
+        behaviorRef: SysDictData_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictDataController-list
+        x_http: "POST /system/dict/data/list"
+        x_permission: system:dict:list
+      - actionId: actDictDataReset
+        name: 重置
+        behaviorRef: SysDictData_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（resetPre()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actDictDataAdd
+        name: 新增
+        behaviorRef: SysDictData_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictDataController-add
+        x_http: "GET /system/dict/data/add/{dictType} → POST /system/dict/data/add"
+        x_permission: system:dict:add
+      - actionId: actDictDataEdit
+        name: 修改
+        behaviorRef: SysDictData_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictDataController-edit
+        x_http: "GET /system/dict/data/edit/{dictCode} → POST /system/dict/data/edit"
+        x_permission: system:dict:edit
+      - actionId: actDictDataRemove
+        name: 删除
+        behaviorRef: SysDictData_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictDataController-remove
+        x_http: "POST /system/dict/data/remove"
+        x_permission: system:dict:remove
+      - actionId: actDictDataExport
+        name: 导出
+        behaviorRef: SysDictData_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysDictDataController-export
+        x_http: "POST /system/dict/data/export"
+        x_permission: system:dict:export
+      - actionId: actDictDataFormSave
+        name: 保存
+        behaviorRef: SysDictData_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysDictDataController-addSave / API-SysDictDataController-editSave
+        x_http: "POST /system/dict/data/add 或 POST /system/dict/data/edit"
+        x_permission: system:dict:add / system:dict:edit
+      - actionId: actDictDataFormClose
+        name: 关闭
+        behaviorRef: SysDictData_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 13. 参数设置
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysConfigList
+    name: 参数列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/config
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/config/config.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/config/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/config/edit.html
+    x_permission: system:config:view
+    x_menuRef: "106"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 参数列表                                            [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 参数名称:[txtConfigName] 参数键名:[txtConfigKey]               │
+      │ 系统内置:(cboConfigType) 创建时间:{dtpStart}-{dtpEnd}          │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport] [btnRefreshCache]  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdConfigList                                                │
+      │  □ | 参数主键 | 参数名称 | 参数键名 | 参数键值 | 系统内置 | 备注 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除]                                       │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增参数 / 修改参数                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      参数名称: [txtConfigName]      参数键名: [txtConfigKey]    │
+      │      参数键值: [txtaConfigValue]                               │
+      │      系统内置: (rdoIsBuiltinYes)是 (rdoIsBuiltinNo)否          │
+      │      备注:     [txtaRemark]                                   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtConfigName
+        type: TEXTBOX
+        label: 参数名称
+        io: I
+        dataBinding: OBJ-SysConfig.configName
+      - id: txtConfigKey
+        type: TEXTBOX
+        label: 参数键名
+        io: I
+        dataBinding: OBJ-SysConfig.configKey
+      - id: cboConfigType
+        type: COMBO
+        label: 系统内置
+        io: I
+        dataBinding: OBJ-SysConfig.configType
+      - id: dtpStart
+        type: DATEPICKER
+        label: 创建时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnRefreshCache
+        type: BUTTON
+        label: 刷新缓存
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdConfigList
+        type: GRID
+        label: 参数列表
+        io: O
+        dataBinding: OBJ-SysConfig.configId
+        dataSource: QR-SYS-CONFIG-001
+      - id: txtConfigName
+        type: TEXTBOX
+        label: 参数名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysConfig.configName
+      - id: txtConfigKey
+        type: TEXTBOX
+        label: 参数键名
+        io: I
+        required: true
+        dataBinding: OBJ-SysConfig.configKey
+        refRules:
+          - name: 参数键名唯一
+            description: add.html 经 jQuery validate remote 调 POST /system/config/checkConfigKeyUnique
+            expression: "true"
+            violationMessage: 参数键名已经存在
+            enforcedAt: ALWAYS
+      - id: txtaConfigValue
+        type: TEXTAREA
+        label: 参数键值
+        io: I
+        required: true
+        dataBinding: OBJ-SysConfig.configValue
+      - id: rdoIsBuiltinYes
+        type: CHECKBOX
+        label: 是
+        io: I
+        dataBinding: OBJ-SysConfig.configType
+      - id: rdoIsBuiltinNo
+        type: CHECKBOX
+        label: 否
+        io: I
+        dataBinding: OBJ-SysConfig.configType
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysConfig.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actConfigQuery
+        name: 搜索
+        behaviorRef: SysConfig_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-list
+        x_http: "POST /system/config/list"
+        x_permission: system:config:list
+      - actionId: actConfigReset
+        name: 重置
+        behaviorRef: SysConfig_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actConfigAdd
+        name: 新增
+        behaviorRef: SysConfig_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-add
+        x_http: "GET /system/config/add → POST /system/config/add"
+        x_permission: system:config:add
+      - actionId: actConfigEdit
+        name: 修改
+        behaviorRef: SysConfig_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-edit
+        x_http: "GET /system/config/edit/{configId} → POST /system/config/edit"
+        x_permission: system:config:edit
+      - actionId: actConfigRemove
+        name: 删除
+        behaviorRef: SysConfig_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-remove
+        x_http: "POST /system/config/remove"
+        x_permission: system:config:remove
+      - actionId: actConfigExport
+        name: 导出
+        behaviorRef: SysConfig_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-export
+        x_http: "POST /system/config/export"
+        x_permission: system:config:export
+      - actionId: actConfigRefreshCache
+        name: 刷新缓存
+        behaviorRef: SysConfig_RefreshCache
+        actionType: BUTTON
+        x_interfaceRef: API-SysConfigController-refreshCache
+        x_http: "GET /system/config/refreshCache"
+        x_permission: system:config:remove
+        x_note: 模板 shiro:hasPermission 复用 system:config:remove 权限码（事实）
+      - actionId: actConfigFormSave
+        name: 保存
+        behaviorRef: SysConfig_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysConfigController-addSave / API-SysConfigController-editSave
+        x_http: "POST /system/config/add 或 POST /system/config/edit"
+        x_permission: system:config:add / system:config:edit
+      - actionId: actConfigFormClose
+        name: 关闭
+        behaviorRef: SysConfig_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 14. 通知公告
+  # ---------------------------------------------------------------------------
+  - screenId: frmSysNoticeList
+    name: 通知公告列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/notice
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/system/notice/notice.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/notice/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/notice/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/system/notice/view.html
+    x_permission: system:notice:view
+    x_menuRef: "107"
+    x_note: 新增/修改走 **全屏弹窗**（$.operate.addFull/editFull）；公告内容为 **summernote 富文本**，支持图片上传至 POST /common/upload（本系统唯一富文本页面）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 通知公告列表                                        [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 公告标题:[txtNoticeTitle] 操作人员:[txtCreateBy]               │
+      │ 公告类型:(cboNoticeType)                                      │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove]                                │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdNoticeList                                                │
+      │  □ | 公告ID | 公告标题 | 公告类型 | 状态 | 创建者 | 创建时间 | 操作 │
+      │   （公告标题为链接 → 打开公告详情 rteNoticeView）              │
+      │  行内操作: [编辑] [删除]                                       │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出全屏对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增通知公告 / 修改通知公告                        [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      公告标题: [txtNoticeTitle]      公告类型: (cboNoticeType) │
+      │      公告内容: [rteNoticeContent]（summernote 富文本，工具栏含插入图片）│
+      │      公告状态: (rdoNoticeStatusNormal)正常 (rdoNoticeStatusClosed)关闭 │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+
+      （公告详情只读视图）
+      ┌──────────────────────────────────────────────────────────────┐
+      │                     公告标题（居中）                          │
+      │ 发件人：[lblCreateBy]                    发送时间：[lblCreateTime] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [lblNoticeContent]（富文本正文，th:utext 直接渲染 HTML）        │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtNoticeTitle
+        type: TEXTBOX
+        label: 公告标题
+        io: I
+        dataBinding: OBJ-SysNotice.noticeTitle
+      - id: txtCreateBy
+        type: TEXTBOX
+        label: 操作人员
+        io: I
+        dataBinding: OBJ-SysNotice.createBy
+      - id: cboNoticeType
+        type: COMBO
+        label: 公告类型
+        io: I
+        dataBinding: OBJ-SysNotice.noticeType
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdNoticeList
+        type: GRID
+        label: 通知公告列表
+        io: O
+        dataBinding: OBJ-SysNotice.noticeId
+        dataSource: QR-SYS-NOTICE-001
+      - id: txtNoticeTitle
+        type: TEXTBOX
+        label: 公告标题
+        io: I
+        required: true
+        dataBinding: OBJ-SysNotice.noticeTitle
+      - id: cboNoticeType
+        type: COMBO
+        label: 公告类型
+        io: I
+        required: false
+        dataBinding: OBJ-SysNotice.noticeType
+      - id: rteNoticeContent
+        type: TEXTAREA
+        label: 公告内容
+        io: I
+        required: false
+        dataBinding: OBJ-SysNotice.noticeContent
+        refRules:
+          - name: 富文本内容提交
+            description: 提交前由 JS 将 summernote 的 code() 写入隐藏域 noticeContent；图片经 POST /common/upload 上传后 insertImage
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+        x_controlTypeOverride: RICH_TEXT
+        x_note: MU-spec §8.2.6 控件枚举无富文本类型，本系统真实存在 summernote（templates/system/notice/add.html:28,47），故按最接近的 TEXTAREA 建模并在此标注真实控件类型（推断：规范枚举缺项时的最近映射）
+      - id: rdoNoticeStatusNormal
+        type: CHECKBOX
+        label: 正常
+        io: I
+        dataBinding: OBJ-SysNotice.status
+      - id: rdoNoticeStatusClosed
+        type: CHECKBOX
+        label: 关闭
+        io: I
+        dataBinding: OBJ-SysNotice.status
+      - id: lblCreateBy
+        type: LABEL
+        label: 发件人
+        io: O
+        dataBinding: OBJ-SysNotice.createBy
+      - id: lblCreateTime
+        type: LABEL
+        label: 发送时间
+        io: O
+        dataBinding: OBJ-SysNotice.createTime
+      - id: lblNoticeContent
+        type: LABEL
+        label: 公告内容
+        io: O
+        dataBinding: OBJ-SysNotice.noticeContent
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actNoticeQuery
+        name: 搜索
+        behaviorRef: SysNotice_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysNoticeController-list
+        x_http: "POST /system/notice/list"
+        x_permission: system:notice:list
+      - actionId: actNoticeReset
+        name: 重置
+        behaviorRef: SysNotice_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actNoticeAdd
+        name: 新增
+        behaviorRef: SysNotice_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysNoticeController-add
+        x_http: "GET /system/notice/add（全屏弹窗）→ POST /system/notice/add"
+        x_permission: system:notice:add
+      - actionId: actNoticeEdit
+        name: 修改
+        behaviorRef: SysNotice_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysNoticeController-edit
+        x_http: "GET /system/notice/edit/{noticeId}（全屏弹窗）→ POST /system/notice/edit"
+        x_permission: system:notice:edit
+      - actionId: actNoticeRemove
+        name: 删除
+        behaviorRef: SysNotice_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysNoticeController-remove
+        x_http: "POST /system/notice/remove"
+        x_permission: system:notice:remove
+      - actionId: actNoticeView
+        name: 查看公告
+        behaviorRef: SysNotice_QueryDetail
+        actionType: BUTTON
+        x_interfaceRef: API-SysNoticeController-view
+        x_http: "GET /system/notice/view/{noticeId}"
+        x_permission: 无（模板未加 shiro 标签）
+      - actionId: actNoticeUploadImage
+        name: 富文本插入图片
+        behaviorRef: Notice_UploadRichImage
+        actionType: BUTTON
+        x_interfaceRef: API-CommonController-uploadFile
+        x_http: "POST /common/upload"
+        x_permission: 无（兜底链要求已认证会话）
+      - actionId: actNoticeFormSave
+        name: 保存
+        behaviorRef: SysNotice_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysNoticeController-addSave / API-SysNoticeController-editSave
+        x_http: "POST /system/notice/add 或 POST /system/notice/edit"
+        x_permission: system:notice:add / system:notice:edit
+      - actionId: actNoticeFormClose
+        name: 关闭
+        behaviorRef: SysNotice_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 15. 定时任务
+  # ---------------------------------------------------------------------------
+  - screenId: frmJobList
+    name: 定时任务列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /monitor/job
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/job.html
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/edit.html
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/detail.html
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/cron.html
+    x_permission: monitor:job:view
+    x_menuRef: "110"
+    x_note: 本系统无审批流，故按 MU-spec §8.5 不设「保存草稿/提交」双按钮；仅有「保存」。任务状态列以 fa-toggle 图标实现启停（非按钮文案），已按 BUTTON 控件登记并在 x_note 说明
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 定时任务列表                                        [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 任务名称:[txtJobName] 任务分组:(cboJobGroup) 任务状态:(cboStatus)│
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove] [btnExport] [btnCronBuilder] [btnJobLog] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdJobList                                                   │
+      │  □ | 任务编号 | 任务名称 | 任务分组 | 调度类型 | 调用目标 | 执行表达式 | 任务状态 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除] [更多操作 ▸]                          │
+      │    └ 执行一次 / 任务详细 / 调度日志                            │
+      │  任务状态列: (btnToggleStatus) 启停切换图标                    │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增任务 / 修改任务                                [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      任务名称: [txtJobName]        任务分组: (cboJobGroupForm) │
+      │      调度类型: (rdoJobTypeBean)Bean调用 (rdoJobTypeHttp)HTTP调用│
+      │  —— Bean 调用分支 ——                                          │
+      │      调用目标字符串: [txtInvokeTarget]                         │
+      │  —— HTTP 调用分支 ——                                          │
+      │      请求URL: [txtRequestUrl]      请求方法: (cboRequestMethod)│
+      │      请求头:  [txtaRequestHeaders] 请求体:   [txtaRequestBody] │
+      │      Content-Type: (cboContentType) 超时时间(ms): [txtTimeout] │
+      │  —— 公共 ——                                                   │
+      │      调度配置: {cron 秒/分/时/日/月/周 选择器}                 │
+      │                Cron表达式：0 0/5 * * * ?（[cronPreview] 实时预览）│
+      │      （[cronExpression] 隐藏域随预览联动）                     │
+      │      执行策略: (rdoMisfireNow)立即执行 (rdoMisfireOnce)执行一次 (rdoMisfireGiveUp)放弃执行 │
+      │      并发执行: (rdoConcurrentAllow)允许 (rdoConcurrentDeny)禁止│
+      │      备注:     [txtaRemark]                                   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+
+      （工具栏「生成表达式」弹出 Cron 生成器 iframe）
+      ┌──────────────────────────────────────────┐
+      │ Cron表达式生成器                          │
+      │ {cron 秒/分/时/日/月/周 控件 + 预览}      │
+      └──────────────────────────────────────────┘
+    elements:
+      - id: txtJobName
+        type: TEXTBOX
+        label: 任务名称
+        io: I
+        dataBinding: OBJ-SysJob.jobName
+      - id: cboJobGroup
+        type: COMBO
+        label: 任务分组
+        io: I
+        dataBinding: OBJ-SysJob.jobGroup
+      - id: cboStatus
+        type: COMBO
+        label: 任务状态
+        io: I
+        dataBinding: OBJ-SysJob.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnCronBuilder
+        type: BUTTON
+        label: 生成表达式
+      - id: btnJobLog
+        type: BUTTON
+        label: 日志
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdJobList
+        type: GRID
+        label: 定时任务列表
+        io: O
+        dataBinding: OBJ-SysJob.jobId
+        dataSource: QR-JOB-001
+      - id: btnToggleStatus
+        type: BUTTON
+        label: 任务状态切换
+        io: I_O
+        dataBinding: OBJ-SysJob.status
+        refRules:
+          - name: 启停双向切换
+            description: status==1（暂停）显示 fa-toggle-off 图标绑 start() 提交 status=0；否则显示 fa-toggle-on 图标绑 stop() 提交 status=1
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: txtJobName
+        type: TEXTBOX
+        label: 任务名称
+        io: I
+        required: true
+        dataBinding: OBJ-SysJob.jobName
+      - id: cboJobGroupForm
+        type: COMBO
+        label: 任务分组
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.jobGroup
+      - id: rdoJobTypeBean
+        type: CHECKBOX
+        label: Bean调用
+        io: I
+        dataBinding: OBJ-SysJob.jobType
+      - id: rdoJobTypeHttp
+        type: CHECKBOX
+        label: HTTP调用
+        io: I
+        dataBinding: OBJ-SysJob.jobType
+        refRules:
+          - name: 调度类型分支显隐
+            description: 选 Bean调用 显示 beanConfig 区、隐藏 httpConfig 区；选 HTTP调用 反之（模板 changeJobType()）
+            expression: "value == '2'"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: txtInvokeTarget
+        type: TEXTBOX
+        label: 调用目标字符串
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.invokeTarget
+        refRules:
+          - name: 调用目标按调度类型必填
+            description: 选 HTTP调用 时移除 invokeTarget 的 required 属性（模板 $('#invokeTarget').removeAttr('required')）
+            expression: "true"
+            violationMessage: 请输入调用目标字符串
+            enforcedAt: ALWAYS
+      - id: txtRequestUrl
+        type: TEXTBOX
+        label: 请求URL
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.requestUrl
+      - id: cboRequestMethod
+        type: COMBO
+        label: 请求方法
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.requestMethod
+      - id: txtaRequestHeaders
+        type: TEXTAREA
+        label: 请求头
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.requestHeaders
+      - id: txtaRequestBody
+        type: TEXTAREA
+        label: 请求体
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.requestBody
+      - id: cboContentType
+        type: COMBO
+        label: Content-Type
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.contentType
+      - id: txtTimeout
+        type: NUMBER
+        label: 超时时间(ms)
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.timeout
+        refRules:
+          - name: 超时取值范围
+            description: 模板 min=1000 max=60000，默认 5000
+            expression: "value >= 1000 and value <= 60000"
+            violationMessage: 超时时间必须介于 1000 和 60000 毫秒之间
+            enforcedAt: ALWAYS
+      - id: cronPreview
+        type: LABEL
+        label: Cron表达式预览
+        io: O
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cronExpression
+        type: TEXTBOX
+        label: Cron表达式
+        io: I
+        required: true
+        dataBinding: OBJ-SysJob.cronExpression
+        refRules:
+          - name: Cron 表达式合法性
+            description: 保存前可经 POST /monitor/job/checkCronExpressionIsValid 校验；默认值 0 0/5 * * * ?
+            expression: "true"
+            violationMessage: Cron 表达式不合法
+            enforcedAt: ALWAYS
+        x_uiHidden: true
+      - id: rdoMisfireNow
+        type: CHECKBOX
+        label: 立即执行
+        io: I
+        dataBinding: OBJ-SysJob.misfirePolicy
+      - id: rdoMisfireOnce
+        type: CHECKBOX
+        label: 执行一次
+        io: I
+        dataBinding: OBJ-SysJob.misfirePolicy
+      - id: rdoMisfireGiveUp
+        type: CHECKBOX
+        label: 放弃执行
+        io: I
+        dataBinding: OBJ-SysJob.misfirePolicy
+      - id: rdoConcurrentAllow
+        type: CHECKBOX
+        label: 允许
+        io: I
+        dataBinding: OBJ-SysJob.concurrent
+      - id: rdoConcurrentDeny
+        type: CHECKBOX
+        label: 禁止
+        io: I
+        dataBinding: OBJ-SysJob.concurrent
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-SysJob.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actJobQuery
+        name: 搜索
+        behaviorRef: SysJob_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-list
+        x_http: "POST /monitor/job/list"
+        x_permission: monitor:job:list
+      - actionId: actJobReset
+        name: 重置
+        behaviorRef: SysJob_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actJobAdd
+        name: 新增
+        behaviorRef: SysJob_Add
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-add
+        x_http: "GET /monitor/job/add → POST /monitor/job/add"
+        x_permission: monitor:job:add
+      - actionId: actJobEdit
+        name: 修改
+        behaviorRef: SysJob_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-edit
+        x_http: "GET /monitor/job/edit/{jobId} → POST /monitor/job/edit"
+        x_permission: monitor:job:edit
+      - actionId: actJobRemove
+        name: 删除
+        behaviorRef: SysJob_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-remove
+        x_http: "POST /monitor/job/remove"
+        x_permission: monitor:job:remove
+      - actionId: actJobExport
+        name: 导出
+        behaviorRef: SysJob_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-export
+        x_http: "POST /monitor/job/export"
+        x_permission: monitor:job:export
+      - actionId: actJobChangeStatus
+        name: 任务状态切换
+        behaviorRef: SysJob_ChangeStatus
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-changeStatus
+        x_http: "POST /monitor/job/changeStatus"
+        x_permission: monitor:job:changeStatus
+      - actionId: actJobRun
+        name: 执行一次
+        behaviorRef: SysJob_RunOnce
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-run
+        x_http: "POST /monitor/job/run"
+        x_permission: monitor:job:changeStatus
+      - actionId: actJobDetail
+        name: 任务详细
+        behaviorRef: SysJob_QueryDetail
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-detail
+        x_http: "GET /monitor/job/detail/{jobId}"
+        x_permission: monitor:job:detail
+      - actionId: actJobCronBuilder
+        name: 生成表达式
+        behaviorRef: SysJob_OpenCronBuilder
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-cron
+        x_http: "GET /monitor/job/cron"
+        x_permission: 无（模板未加 shiro 标签，属权限覆盖缺口）
+      - actionId: actJobCheckCron
+        name: 校验Cron表达式
+        behaviorRef: SysJob_CheckCronExpression
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-checkCronExpressionIsValid
+        x_http: "POST /monitor/job/checkCronExpressionIsValid"
+        x_permission: 无
+      - actionId: actJobOpenLog
+        name: 日志 / 调度日志
+        behaviorRef: SysJobLog_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: 页面跳转（$.modal.openTab）
+        x_http: "GET /monitor/jobLog（可带 ?jobId=）"
+        x_permission: monitor:job:detail
+      - actionId: actJobFormSave
+        name: 保存
+        behaviorRef: SysJob_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-SysJobController-addSave / API-SysJobController-editSave
+        x_http: "POST /monitor/job/add 或 POST /monitor/job/edit"
+        x_permission: monitor:job:add / monitor:job:edit
+      - actionId: actJobFormClose
+        name: 关闭
+        behaviorRef: SysJob_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 16. 调度日志
+  # ---------------------------------------------------------------------------
+  - screenId: frmJobLogList
+    name: 定时任务日志列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /monitor/jobLog
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/jobLog.html
+      - open-api/qvsu-openapi/src/main/resources/templates/monitor/job/detail.html
+    x_permission: monitor:job:list
+    x_menuRef: "1101"
+    x_note: 本屏由定时任务页经 $.modal.openTab 打开（事实：job.html jobLog()）；行内仅「详细」，删除走工具栏批量删除
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 定时任务日志列表                                    [btnExit] │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 任务名称:[txtJobName] 任务分组:(cboJobGroup) 执行状态:(cboStatus)│
+      │ 执行时间:{dtpStart}-{dtpEnd}                                  │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnRemoveAll] [btnClean] [btnExport] [btnClose]              │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdJobLogList                                                │
+      │  □ | 日志编号 | 任务名称 | 任务分组 | 调用目标字符串 | 日志信息 | 状态 | 创建时间 | 操作 │
+      │  行内操作: [详细]                                              │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtJobName
+        type: TEXTBOX
+        label: 任务名称
+        io: I
+        dataBinding: OBJ-SysJobLog.jobName
+      - id: cboJobGroup
+        type: COMBO
+        label: 任务分组
+        io: I
+        dataBinding: OBJ-SysJobLog.jobGroup
+      - id: cboStatus
+        type: COMBO
+        label: 执行状态
+        io: I
+        dataBinding: OBJ-SysJobLog.status
+      - id: dtpStart
+        type: DATEPICKER
+        label: 执行时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnRemoveAll
+        type: BUTTON
+        label: 删除
+      - id: btnClean
+        type: BUTTON
+        label: 清空
+      - id: btnExport
+        type: BUTTON
+        label: 导出
+      - id: btnClose
+        type: BUTTON
+        label: 关闭
+      - id: btnExit
+        type: BUTTON
+        label: 关闭
+      - id: grdJobLogList
+        type: GRID
+        label: 调度日志列表
+        io: O
+        dataBinding: OBJ-SysJobLog.jobLogId
+        dataSource: QR-JOBLOG-001
+    actions:
+      - actionId: actJobLogQuery
+        name: 搜索
+        behaviorRef: SysJobLog_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobLogController-list
+        x_http: "POST /monitor/jobLog/list"
+        x_permission: monitor:job:list
+      - actionId: actJobLogReset
+        name: 重置
+        behaviorRef: SysJobLog_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actJobLogRemove
+        name: 删除
+        behaviorRef: SysJobLog_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobLogController-remove
+        x_http: "POST /monitor/jobLog/remove"
+        x_permission: monitor:job:remove
+      - actionId: actJobLogClean
+        name: 清空
+        behaviorRef: SysJobLog_Clean
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobLogController-clean
+        x_http: "POST /monitor/jobLog/clean"
+        x_permission: monitor:job:remove
+      - actionId: actJobLogExport
+        name: 导出
+        behaviorRef: SysJobLog_ExportExcel
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobLogController-export
+        x_http: "POST /monitor/jobLog/export"
+        x_permission: monitor:job:export
+      - actionId: actJobLogDetail
+        name: 详细
+        behaviorRef: SysJobLog_QueryDetail
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobLogController-detail
+        x_http: "GET /monitor/jobLog/detail/{jobLogId}"
+        x_permission: monitor:job:detail
+      - actionId: actJobLogClose
+        name: 关闭
+        behaviorRef: SysJobLog_ClosePage
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 17. 开放应用管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmOpenAppList
+    name: 开放应用列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /admin/open/app
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/open/app/index.html
+      - open-api/qvsu-openapi/src/main/resources/templates/open/app/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/open/app/edit.html
+    x_permission: open:app:view
+    x_menuRef: "2101"
+    x_note: 本模块 9 个模板**全部未使用 shiro:hasPermission 标签**（事实，与 system/monitor 模块不一致），按钮级权限仅由后端 /admin/open/** 端点与菜单权限码表达
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 开放应用管理                                                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 应用名称:[txtAppName]  appKey:[txtAppKey]  状态:(cboStatus)    │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove]                                │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdOpenAppList                                               │
+      │  □ | ID | 应用名称 | AppKey | 联系人 | 状态 | 过期时间 | 创建时间 | 操作 │
+      │  行内操作: [编辑] [删除] [重置密钥]                            │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增开放应用 / 修改开放应用                        [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      应用名称: [txtAppName]        联系人: [txtContact]         │
+      │      状态:     (rdoStatusEnabled)启用 (rdoStatusDisabled)禁用   │
+      │      过期时间: [txtExpireTime]（纯文本，placeholder=yyyy-MM-dd HH:mm:ss）│
+      │      备注:     [txtaRemark]                                   │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtAppName
+        type: TEXTBOX
+        label: 应用名称
+        io: I
+        dataBinding: OBJ-OpenApp.appName
+      - id: txtAppKey
+        type: TEXTBOX
+        label: appKey
+        io: I
+        dataBinding: OBJ-OpenApp.appKey
+      - id: cboStatus
+        type: COMBO
+        label: 状态
+        io: I
+        dataBinding: OBJ-OpenApp.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: grdOpenAppList
+        type: GRID
+        label: 开放应用列表
+        io: O
+        dataBinding: OBJ-OpenApp.sId
+        dataSource: QR-OPEN-APP-001
+      - id: txtAppName
+        type: TEXTBOX
+        label: 应用名称
+        io: I
+        required: true
+        dataBinding: OBJ-OpenApp.appName
+      - id: txtContact
+        type: TEXTBOX
+        label: 联系人
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApp.contact
+      - id: rdoStatusEnabled
+        type: CHECKBOX
+        label: 启用
+        io: I
+        dataBinding: OBJ-OpenApp.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 禁用
+        io: I
+        dataBinding: OBJ-OpenApp.status
+      - id: txtExpireTime
+        type: TEXTBOX
+        label: 过期时间
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApp.expireTime
+        refRules:
+          - name: 过期时间格式
+            description: 模板为纯文本输入，placeholder="yyyy-MM-dd HH:mm:ss"，后端按时间戳写入
+            expression: "matches(value, '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$')"
+            violationMessage: 过期时间格式须为 yyyy-MM-dd HH:mm:ss
+            enforcedAt: ALWAYS
+      - id: txtaRemark
+        type: TEXTAREA
+        label: 备注
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApp.remark
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actOpenAppQuery
+        name: 搜索
+        behaviorRef: OpenApp_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAppController-list
+        x_http: "POST /admin/open/app/list"
+        x_permission: open:app:view
+      - actionId: actOpenAppReset
+        name: 重置
+        behaviorRef: OpenApp_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actOpenAppAdd
+        name: 新增
+        behaviorRef: OpenApp_Add
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAppController-add
+        x_http: "GET /admin/open/app/add → POST /admin/open/app/add"
+        x_permission: open:app:add
+      - actionId: actOpenAppEdit
+        name: 修改
+        behaviorRef: OpenApp_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAppController-edit
+        x_http: "GET /admin/open/app/edit/{id} → POST /admin/open/app/edit"
+        x_permission: open:app:edit
+      - actionId: actOpenAppRemove
+        name: 删除
+        behaviorRef: OpenApp_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAppController-remove
+        x_http: "POST /admin/open/app/remove"
+        x_permission: open:app:remove
+      - actionId: actOpenAppResetSecret
+        name: 重置密钥
+        behaviorRef: OpenApp_ResetSecret
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAppController-resetSecret
+        x_http: "POST /admin/open/app/resetSecret"
+        x_permission: 无（菜单无对应按钮权限码；端点仅 Shiro 会话认证）
+      - actionId: actOpenAppFormSave
+        name: 保存
+        behaviorRef: OpenApp_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-OpenAppController-addSave / API-OpenAppController-editSave
+        x_http: "POST /admin/open/app/add 或 POST /admin/open/app/edit"
+        x_permission: open:app:add / open:app:edit
+      - actionId: actOpenAppFormClose
+        name: 关闭
+        behaviorRef: OpenApp_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 18. 开放接口管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmOpenApiList
+    name: 开放接口列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /admin/open/api
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/open/api/index.html
+      - open-api/qvsu-openapi/src/main/resources/templates/open/api/add.html
+      - open-api/qvsu-openapi/src/main/resources/templates/open/api/edit.html
+    x_permission: open:api:view
+    x_menuRef: "2102"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 开放接口管理                                                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 接口名称:[txtApiName] 开放路径:[txtApiPath] 状态:(cboStatus)   │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAdd] [btnEdit] [btnRemove]                                │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdOpenApiList                                               │
+      │  □ | ID | 接口名称 | 开放路径 | 方法 | 目标地址 | 超时(ms) | 签名 | 状态 | 请求示例(cURL) | 操作 │
+      │  行内操作: [查看(cURL)] [编辑] [删除]                          │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「新增」/「编辑」弹出对话框，页面本身不展示以下表单）
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 新增开放接口 / 修改开放接口                        [btnFormExit]│
+      ├──────────────────────────────────────────────────────────────┤
+      │      接口名称: [txtApiName]        开放路径: [txtApiPath]       │
+      │      请求方法: [txtMethod]         目标地址: [txtTargetUrl]     │
+      │      超时(ms): [txtTimeoutMs]      状态:     (rdoStatusEnabled)启用 (rdoStatusDisabled)禁用 │
+      │      需要签名: (rdoNeedSignYes)是 (rdoNeedSignNo)否            │
+      │      说明:     [txtaDescription]                              │
+      │      请求参数示例: [txtaReqExample]                            │
+      │      响应示例:     [txtaRespExample]                           │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnFormCancel] [btnFormSave]                                 │
+      └──────────────────────────────────────────────────────────────┘
+
+      （点击「查看(cURL)」弹出 cURL 示例层）
+      ┌──────────────────────────────────────────┐
+      │ 请求示例(cURL)                            │
+      │ [lblCurlExample]（等宽高亮文本）           │
+      │ [btnCopyCurl] [btnCurlClose]              │
+      └──────────────────────────────────────────┘
+    elements:
+      - id: txtApiName
+        type: TEXTBOX
+        label: 接口名称
+        io: I
+        dataBinding: OBJ-OpenApi.apiName
+      - id: txtApiPath
+        type: TEXTBOX
+        label: 开放路径
+        io: I
+        dataBinding: OBJ-OpenApi.apiPath
+      - id: cboStatus
+        type: COMBO
+        label: 状态
+        io: I
+        dataBinding: OBJ-OpenApi.status
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnAdd
+        type: BUTTON
+        label: 新增
+      - id: btnEdit
+        type: BUTTON
+        label: 修改
+      - id: btnRemove
+        type: BUTTON
+        label: 删除
+      - id: grdOpenApiList
+        type: GRID
+        label: 开放接口列表
+        io: O
+        dataBinding: OBJ-OpenApi.sId
+        dataSource: QR-OPEN-API-001
+      - id: lblCurlExample
+        type: LABEL
+        label: 请求示例(cURL)
+        io: O
+      - id: btnCopyCurl
+        type: BUTTON
+        label: 复制
+      - id: btnCurlClose
+        type: BUTTON
+        label: 关闭
+      - id: txtApiName
+        type: TEXTBOX
+        label: 接口名称
+        io: I
+        required: true
+        dataBinding: OBJ-OpenApi.apiName
+      - id: txtApiPath
+        type: TEXTBOX
+        label: 开放路径
+        io: I
+        required: true
+        dataBinding: OBJ-OpenApi.apiPath
+        refRules:
+          - name: 开放路径示例格式
+            description: 模板 placeholder="/open/order/list"，无强校验
+            expression: "startsWith(value, '/')"
+            violationMessage: 开放路径建议以 / 开头
+            enforcedAt: ALWAYS
+      - id: txtMethod
+        type: TEXTBOX
+        label: 请求方法
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.method
+      - id: txtTargetUrl
+        type: TEXTBOX
+        label: 目标地址
+        io: I
+        required: true
+        dataBinding: OBJ-OpenApi.targetUrl
+      - id: txtTimeoutMs
+        type: NUMBER
+        label: 超时(ms)
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.timeoutMs
+      - id: rdoStatusEnabled
+        type: CHECKBOX
+        label: 启用
+        io: I
+        dataBinding: OBJ-OpenApi.status
+      - id: rdoStatusDisabled
+        type: CHECKBOX
+        label: 禁用
+        io: I
+        dataBinding: OBJ-OpenApi.status
+      - id: rdoNeedSignYes
+        type: CHECKBOX
+        label: 是
+        io: I
+        dataBinding: OBJ-OpenApi.needSign
+      - id: rdoNeedSignNo
+        type: CHECKBOX
+        label: 否
+        io: I
+        dataBinding: OBJ-OpenApi.needSign
+      - id: txtaDescription
+        type: TEXTAREA
+        label: 说明
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.description
+      - id: txtaReqExample
+        type: TEXTAREA
+        label: 请求参数示例
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.reqExample
+      - id: txtaRespExample
+        type: TEXTAREA
+        label: 响应示例
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.respExample
+      - id: btnFormSave
+        type: BUTTON
+        label: 保存
+      - id: btnFormCancel
+        type: BUTTON
+        label: 关闭
+      - id: btnFormExit
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actOpenApiQuery
+        name: 搜索
+        behaviorRef: OpenApi_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-OpenApiMgrController-list
+        x_http: "POST /admin/open/api/list"
+        x_permission: open:api:view
+      - actionId: actOpenApiReset
+        name: 重置
+        behaviorRef: OpenApi_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actOpenApiAdd
+        name: 新增
+        behaviorRef: OpenApi_Add
+        actionType: BUTTON
+        x_interfaceRef: API-OpenApiMgrController-add
+        x_http: "GET /admin/open/api/add → POST /admin/open/api/add"
+        x_permission: open:api:add
+      - actionId: actOpenApiEdit
+        name: 修改
+        behaviorRef: OpenApi_Edit
+        actionType: BUTTON
+        x_interfaceRef: API-OpenApiMgrController-edit
+        x_http: "GET /admin/open/api/edit/{id} → POST /admin/open/api/edit"
+        x_permission: open:api:edit
+      - actionId: actOpenApiRemove
+        name: 删除
+        behaviorRef: OpenApi_Remove
+        actionType: BUTTON
+        x_interfaceRef: API-OpenApiMgrController-remove
+        x_http: "POST /admin/open/api/remove"
+        x_permission: open:api:remove
+      - actionId: actOpenApiShowCurl
+        name: 查看(cURL)
+        behaviorRef: OpenApi_QueryCurlExample
+        actionType: BUTTON
+        x_interfaceRef: API-OpenApiMgrController-curl
+        x_http: "GET /admin/open/api/curl/{id}"
+        x_permission: 无（菜单无对应按钮权限码）
+      - actionId: actOpenApiCopyCurl
+        name: 复制cURL
+        behaviorRef: OpenApi_CopyCurlExample
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（document.execCommand('copy')）
+        x_http: 无
+        x_permission: 无
+      - actionId: actOpenApiFormSave
+        name: 保存
+        behaviorRef: OpenApi_SaveForm
+        actionType: SUBMIT
+        x_interfaceRef: API-OpenApiMgrController-addSave / API-OpenApiMgrController-editSave
+        x_http: "POST /admin/open/api/add 或 POST /admin/open/api/edit"
+        x_permission: open:api:add / open:api:edit
+      - actionId: actOpenApiFormClose
+        name: 关闭
+        behaviorRef: OpenApi_CloseForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 19. 授权管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmOpenAuth
+    name: 应用接口授权列表
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /admin/open/auth
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/open/auth/index.html
+    x_permission: open:auth:view
+    x_menuRef: "2103"
+    x_note: 本屏不是表格列表，而是「应用下拉框 + 接口复选框网格」的授权矩阵；已授权项 disabled 并带「已授权」徽章，保存为**覆盖式**提交（先 delete 该 app 全部授权再批量 insert）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 授权管理                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 应用：(cboApp)                                                │
+      │ [btnLoadAuth] [btnSaveAuth] [btnCheckAll] [btnClearAll]        │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 应用接口授权列表                                              │
+      │ ☑(chkApiGrp) 接口A [POST /open/a]  ☐ 接口B [GET /open/b] 已授权 │
+      │ ☑ 接口C [POST /open/c]            ☐ 接口D [GET /open/d]       │
+      │ （3 列网格，复选框组 name=apiIds）                             │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: cboApp
+        type: COMBO
+        label: 应用
+        io: I
+        required: true
+        dataBinding: OBJ-OpenApp.sId
+        dataSource: QR-OPEN-AUTH-001
+        refRules:
+          - name: 必选应用
+            description: 未选应用时 loadAuth()/saveAuth() 给出 msgWarning('请先选择应用')；选项来自 GET /admin/open/auth/apps（仅 status=1 的应用）
+            expression: "len(value) > 0"
+            violationMessage: 请先选择应用
+            enforcedAt: ALWAYS
+      - id: btnLoadAuth
+        type: BUTTON
+        label: 加载授权
+      - id: btnSaveAuth
+        type: BUTTON
+        label: 保存授权
+      - id: btnCheckAll
+        type: BUTTON
+        label: 全选
+      - id: btnClearAll
+        type: BUTTON
+        label: 清空
+      - id: chkApiGrp
+        type: CHECKBOX
+        label: 待授权接口
+        io: I_O
+        dataBinding: OBJ-OpenAppApi.apiId
+        dataSource: QR-OPEN-AUTH-001
+        refRules:
+          - name: 已授权项不可取消
+            description: 已授权接口的复选框被 disabled 并带「已授权」徽章，保存时以 authorizedApiIds 合并（前端不做取消授权）
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+    actions:
+      - actionId: actAuthLoad
+        name: 加载授权
+        behaviorRef: OpenAppApi_QueryAuthOptions
+        actionType: BUTTON
+        x_interfaceRef: API-OpenAuthController-apiIds
+        x_http: "GET /admin/open/auth/apiIds"
+        x_permission: open:auth:view
+      - actionId: actAuthSave
+        name: 保存授权
+        behaviorRef: OpenAppApi_SaveAuth
+        actionType: SUBMIT
+        x_interfaceRef: API-OpenAuthController-save
+        x_http: "POST /admin/open/auth/save（traditional=true，重复 apiIds 参数）"
+        x_permission: open:auth:save
+      - actionId: actAuthCheckAll
+        name: 全选
+        behaviorRef: OpenAppApi_CheckAllAuth
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（checkAll(false)）
+        x_http: 无
+        x_permission: 无
+      - actionId: actAuthClearAll
+        name: 清空
+        behaviorRef: OpenAppApi_ClearAllAuth
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（checkAll(true)）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 20. 调用日志
+  # ---------------------------------------------------------------------------
+  - screenId: frmOpenLogList
+    name: 开放调用日志
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /admin/open/log
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/open/log/index.html
+    x_permission: open:log:view
+    x_menuRef: "2104"
+    x_note: 页面顶部另有两条统计横条（今日调用总览、Top应用），绑定 M7 的 QR-OPEN-LOG-002 / QR-OPEN-LOG-003（事实：index.html #statsBar / #topAppsBar 由 GET /admin/open/log/stats 一次填充）；表格启用 detailView 展开行
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 调用日志                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 今日调用量: 0，成功率: 0%，平均耗时: 0ms        ← 统计横条1    │
+      │ Top应用: -                                    ← 统计横条2    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ traceId:[txtTraceId] appKey:[txtAppKey] API路径:[txtApiPath]  │
+      │ 状态:(cboStatus) 时间:{dtpStart}-{dtpEnd}                      │
+      │ [btnQuery] [btnReset] [btnExportCsv]                          │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdOpenLogList（detailView 可展开明细行）                     │
+      │  TraceId | AppKey | 应用名称 | API路径 | 方法 | HTTP码 | 耗时(ms) | 状态 | 调用时间 │
+      │  └ 展开行：客户端IP / 错误信息 / 请求体 / 响应体                 │
+      │ [分页: 共N条 | 第1/N页 | 上一页 | 下一页]                       │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtTraceId
+        type: TEXTBOX
+        label: traceId
+        io: I
+        dataBinding: OBJ-OpenCallLog.traceId
+      - id: txtAppKey
+        type: TEXTBOX
+        label: appKey
+        io: I
+        dataBinding: OBJ-OpenCallLog.appKey
+      - id: txtApiPath
+        type: TEXTBOX
+        label: API路径
+        io: I
+        dataBinding: OBJ-OpenCallLog.apiPath
+      - id: cboStatus
+        type: COMBO
+        label: 状态
+        io: I
+        dataBinding: OBJ-OpenCallLog.status
+      - id: dtpStart
+        type: DATEPICKER
+        label: 时间从
+        io: I
+      - id: dtpEnd
+        type: DATEPICKER
+        label: 到
+        io: I
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: btnExportCsv
+        type: BUTTON
+        label: 导出CSV
+      - id: grdOpenLogList
+        type: GRID
+        label: 调用日志列表
+        io: O
+        dataBinding: OBJ-OpenCallLog.sId
+        dataSource: QR-OPEN-LOG-001
+      - id: lblStatsToday
+        type: LABEL
+        label: 今日调用总览
+        io: O
+        dataSource: QR-OPEN-LOG-002
+      - id: lblStatsTopApps
+        type: LABEL
+        label: Top应用
+        io: O
+        dataSource: QR-OPEN-LOG-003
+    actions:
+      - actionId: actOpenLogQuery
+        name: 搜索
+        behaviorRef: OpenCallLog_QueryList
+        actionType: BUTTON
+        x_interfaceRef: API-OpenLogController-list
+        x_http: "POST /admin/open/log/list"
+        x_permission: open:log:list
+      - actionId: actOpenLogReset
+        name: 重置
+        behaviorRef: OpenCallLog_ResetQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actOpenLogExportCsv
+        name: 导出CSV
+        behaviorRef: OpenCallLog_ExportCsv
+        actionType: BUTTON
+        x_interfaceRef: API-OpenLogController-exportCsv
+        x_http: "GET /admin/open/log/exportCsv"
+        x_permission: open:log:list
+      - actionId: actOpenLogLoadStats
+        name: 加载今日统计
+        behaviorRef: OpenCallLog_QueryTodayStats
+        actionType: BUTTON
+        x_interfaceRef: API-OpenLogController-stats
+        x_http: "GET /admin/open/log/stats"
+        x_permission: open:log:list
+        x_note: 页面 $(function(){...}) 内自动触发一次，非用户点击
+
+  # ---------------------------------------------------------------------------
+  # 21. 文档管理
+  # ---------------------------------------------------------------------------
+  - screenId: frmOpenDoc
+    name: 文档中心
+    screenType: QUERY_LIST
+    x_routeUrl: /admin/open/doc
+    x_templatePath:
+      - open-api/qvsu-openapi/src/main/resources/templates/open/doc/index.html
+    x_permission: open:doc:view
+    x_menuRef: "2105"
+    x_note: 页面为**左右两栏**（左 320px 接口清单 + 右 iframe 在线预览），不是「查询条件 + 结果表格」；无分页、无导出按钮。左栏关键词为**本地过滤**（不请求后端）。生成文档的 POST /admin/open/doc/generate 与下载 GET /admin/open/doc/download 端点存在，但当前模板未提供入口按钮（事实）
+    layout: |
+      ┌────────────────────┬─────────────────────────────────────────┐
+      │ 文档中心            │                                         │
+      ├────────────────────┤                                         │
+      │ [txtApiKeyword]    │  [iframeDocPreview]                     │
+      │ ← 搜索接口名称/路径 │   （默认加载第一个接口的文档           │
+      │ @lstApiMenu        │    GET /admin/open/doc/html/{apiId}）  │
+      │  ┌───────────────┐ │                                         │
+      │  │ 接口A          │ │   未选择时显示：请选择左侧接口查看文档   │
+      │  │ POST /open/a   │ │                                         │
+      │  ├───────────────┤ │                                         │
+      │  │ 接口B          │ │                                         │
+      │  │ GET /open/b    │ │                                         │
+      │  └───────────────┘ │                                         │
+      └────────────────────┴─────────────────────────────────────────┘
+    elements:
+      - id: txtApiKeyword
+        type: TEXTBOX
+        label: 搜索接口名称/路径
+        io: I
+        required: false
+        dataBinding: OBJ-OpenApi.apiName
+        refRules:
+          - name: 本地过滤
+            description: input 事件触发 renderMenu()，对已加载的 apiList 做前端模糊匹配，不请求后端
+            expression: "true"
+            violationMessage: "-"
+            enforcedAt: ALWAYS
+      - id: lstApiMenu
+        type: GRID
+        label: 接口清单
+        io: O
+        dataBinding: OBJ-OpenApi.apiId
+        dataSource: QR-OPEN-API-001
+      - id: iframeDocPreview
+        type: GRID
+        label: 文档预览
+        io: O
+        dataBinding: OBJ-OpenApiDoc.htmlContent
+    actions:
+      - actionId: actOpenDocLoadApis
+        name: 加载接口清单
+        behaviorRef: OpenApi_QueryDocApiList
+        actionType: BUTTON
+        x_interfaceRef: API-OpenDocController-apis
+        x_http: "GET /admin/open/doc/apis"
+        x_permission: open:doc:view
+        x_note: 页面 $(function(){...}) 内自动触发一次
+      - actionId: actOpenDocPreview
+        name: 打开接口文档
+        behaviorRef: OpenApiDoc_Preview
+        actionType: BUTTON
+        x_interfaceRef: API-OpenDocController-html
+        x_http: "GET /admin/open/doc/html/{apiId}"
+        x_permission: open:doc:generate
+      - actionId: actOpenDocFilter
+        name: 搜索接口名称/路径
+        behaviorRef: OpenApiDoc_FilterLocal
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（renderMenu）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 22. 未授权提示页
+  # ---------------------------------------------------------------------------
+  - screenId: frmUnauth
+    name: 未授权提示页
+    screenType: SINGLE_FORM
+    x_routeUrl: /unauth
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/error/unauth.html
+    x_permission: 无
+    x_entryRef: ENTRY-unauth
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 无权限访问                                                    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [lblUnauthMessage] 很抱歉，你没有访问该页面的权限              │
+      │ [btnBack] 返回首页                                            │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: lblUnauthMessage
+        type: LABEL
+        label: 未授权提示
+        io: O
+      - id: btnBack
+        type: BUTTON
+        label: 返回首页
+    actions:
+      - actionId: actUnauthBack
+        name: 返回首页
+        behaviorRef: SysIndex_OpenPage
+        actionType: BUTTON
+        x_interfaceRef: API-SysIndexController-index
+        x_http: "GET /index"
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 23. 锁屏
+  # ---------------------------------------------------------------------------
+  - screenId: frmLock
+    name: 锁屏
+    screenType: SINGLE_FORM
+    x_routeUrl: /lockscreen
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/lock.html
+    x_permission: 无（需已认证会话）
+    x_entryRef: ENTRY-lockscreen
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 聚搭OpenAPI系统                                               │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [imgAvatar]  当前用户：[lblLoginName]                          │
+      │ 密码: [txtLockPassword]                                       │
+      │ [btnUnlock]                                                   │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: imgAvatar
+        type: LABEL
+        label: 用户头像
+        io: O
+        dataBinding: OBJ-SysUser.avatar
+      - id: lblLoginName
+        type: LABEL
+        label: 当前用户
+        io: O
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtLockPassword
+        type: TEXTBOX
+        label: 密码
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.password
+      - id: btnUnlock
+        type: BUTTON
+        label: 解锁
+    actions:
+      - actionId: actUnlock
+        name: 解锁
+        behaviorRef: SysIndex_UnlockScreen
+        actionType: SUBMIT
+        x_interfaceRef: API-SysIndexController-unlockscreen
+        x_http: "POST /unlockscreen"
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 24. 头像上传（个人中心弹窗页）
+  # ---------------------------------------------------------------------------
+  - screenId: frmAvatar
+    name: 修改头像
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/user/profile/avatar
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/user/profile/avatar.html
+    x_permission: 无（登录用户本人）
+    x_entryRef: 无菜单入口（个人中心内打开）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 修改头像                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [imgAvatar]                                                   │
+      │ [fileAvatar] 上传图像                                          │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAvatarSave] [btnAvatarCancel]                             │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: imgAvatar
+        type: LABEL
+        label: 当前头像
+        io: O
+        dataBinding: OBJ-SysUser.avatar
+      - id: fileAvatar
+        type: TEXTBOX
+        label: 上传图像
+        io: I
+        required: false
+        x_controlTypeOverride: FILE_UPLOAD
+        x_note: MU-spec §8.2.6 控件枚举无文件上传类型，本系统真实控件为 <input type="file" name="avatar" accept="image/*">（templates/system/user/profile/avatar.html:142），另用 cropper 裁剪插件，故按 TEXTBOX 建模并在此标注真实控件类型（推断：规范枚举缺项时的最近映射）
+      - id: btnAvatarSave
+        type: BUTTON
+        label: 保存
+      - id: btnAvatarCancel
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actAvatarSave
+        name: 保存头像
+        behaviorRef: SysProfile_UpdateAvatar
+        actionType: SUBMIT
+        x_interfaceRef: API-SysProfileController-updateAvatar
+        x_http: "POST /system/user/profile/updateAvatar"
+        x_permission: 无
+      - actionId: actAvatarCancel
+        name: 关闭
+        behaviorRef: SysProfile_CloseAvatarForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 25. 重置密码（系统管理弹窗页）
+  # ---------------------------------------------------------------------------
+  - screenId: frmUserResetPwd
+    name: 重置密码
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/user/resetPwd/{userId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/user/resetPwd.html
+    x_permission: system:user:resetPwd
+    x_menuRef: "100"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 修改密码                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 登录名称: [txtLoginNameRO]                                    │
+      │ 输入密码: [txtPassword]                                       │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnPwdSave] [btnPwdCancel]                                   │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtLoginNameRO
+        type: TEXTBOX
+        label: 登录名称
+        io: O
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtPassword
+        type: TEXTBOX
+        label: 输入密码
+        io: I
+        required: true
+        dataBinding: OBJ-SysUser.password
+        refRules:
+          - name: 重置密码长度
+            description: resetPwd.html validate minlength=5 / maxlength=20 / specialSign；初值取系统参数 sys.user.initPassword
+            expression: "len(value) >= 5 and len(value) <= 20"
+            violationMessage: 密码长度必须介于 5 和 20 之间
+            enforcedAt: ALWAYS
+      - id: btnPwdSave
+        type: BUTTON
+        label: 保存
+      - id: btnPwdCancel
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actUserResetPwdSave
+        name: 保存
+        behaviorRef: SysUser_ResetPwd
+        actionType: SUBMIT
+        x_interfaceRef: API-SysUserController-resetPwdSave
+        x_http: "POST /system/user/resetPwd"
+        x_permission: system:user:resetPwd
+      - actionId: actUserResetPwdClose
+        name: 关闭
+        behaviorRef: SysUser_CloseResetPwdForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 26. 分配角色（系统管理页签页）
+  # ---------------------------------------------------------------------------
+  - screenId: frmUserAuthRole
+    name: 用户分配角色
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/user/authRole/{userId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/user/authRole.html
+    x_permission: system:user:edit
+    x_menuRef: "100"
+    x_note: 内嵌表格为**客户端分页**（sidePagination 设为 client），数据由页面内联 roles 数组提供；userName/loginName 为 disabled 只读展示
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 用户分配角色                                                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 用户名称: [txtUserNameRO]    登录账号: [txtLoginNameRO]        │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdRoleSelect（客户端分页，多选 checkbox）                    │
+      │  □ | 角色编号 | 排序 | 角色名称 | 权限字符 | 创建时间           │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnAuthRoleSave] [btnAuthRoleCancel]                         │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtUserNameRO
+        type: TEXTBOX
+        label: 用户名称
+        io: O
+        dataBinding: OBJ-SysUser.userName
+      - id: txtLoginNameRO
+        type: TEXTBOX
+        label: 登录账号
+        io: O
+        dataBinding: OBJ-SysUser.loginName
+      - id: grdRoleSelect
+        type: GRID
+        label: 可选角色
+        io: I_O
+        dataBinding: OBJ-SysRole.roleId
+        dataSource: QR-SYS-ROLE-001
+      - id: btnAuthRoleSave
+        type: BUTTON
+        label: 保存
+      - id: btnAuthRoleCancel
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actUserAuthRoleSave
+        name: 保存
+        behaviorRef: SysUser_AuthRole
+        actionType: SUBMIT
+        x_interfaceRef: API-SysUserController-insertAuthRole
+        x_http: "POST /system/user/authRole/insertAuthRole"
+        x_permission: system:user:edit
+      - actionId: actUserAuthRoleClose
+        name: 关闭
+        behaviorRef: SysUser_CloseAuthRoleForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 27. 用户详情（只读）
+  # ---------------------------------------------------------------------------
+  - screenId: frmUserView
+    name: 用户详情
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/user/view/{userId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/user/view.html
+    x_permission: 无（模板未加 shiro 标签）
+    x_menuRef: "100"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 用户详情                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │      登录名称: [lblLoginName]        用户名称: [lblUserName]   │
+      │      归属部门: [lblDeptName]         手机号码: [lblPhonenumber]│
+      │      邮箱:     [lblEmail]            用户状态: [lblStatus]     │
+      │      用户性别: [lblSex]              创建时间: [lblCreateTime] │
+      │      岗位:     [lblPostNames]        角色:     [lblRoleNames]  │
+      │      备注:     [lblRemark]                                    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnViewClose]                                                │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: lblLoginName
+        type: LABEL
+        label: 登录名称
+        io: O
+        dataBinding: OBJ-SysUser.loginName
+      - id: lblUserName
+        type: LABEL
+        label: 用户名称
+        io: O
+        dataBinding: OBJ-SysUser.userName
+      - id: lblDeptName
+        type: LABEL
+        label: 归属部门
+        io: O
+        dataBinding: OBJ-SysDept.deptName
+      - id: lblPhonenumber
+        type: LABEL
+        label: 手机号码
+        io: O
+        dataBinding: OBJ-SysUser.phonenumber
+      - id: lblEmail
+        type: LABEL
+        label: 邮箱
+        io: O
+        dataBinding: OBJ-SysUser.email
+      - id: lblStatus
+        type: LABEL
+        label: 用户状态
+        io: O
+        dataBinding: OBJ-SysUser.status
+      - id: lblSex
+        type: LABEL
+        label: 用户性别
+        io: O
+        dataBinding: OBJ-SysUser.sex
+      - id: lblCreateTime
+        type: LABEL
+        label: 创建时间
+        io: O
+        dataBinding: OBJ-SysUser.createTime
+      - id: lblPostNames
+        type: LABEL
+        label: 岗位
+        io: O
+        dataBinding: OBJ-SysUser.postIds
+      - id: lblRoleNames
+        type: LABEL
+        label: 角色
+        io: O
+        dataBinding: OBJ-SysUser.roleIds
+      - id: lblRemark
+        type: LABEL
+        label: 备注
+        io: O
+        dataBinding: OBJ-SysUser.remark
+      - id: btnViewClose
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actUserViewClose
+        name: 关闭
+        behaviorRef: SysUser_CloseViewForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 28. 公告详情（只读）
+  # ---------------------------------------------------------------------------
+  - screenId: frmNoticeView
+    name: 公告详情
+    screenType: SINGLE_FORM
+    x_routeUrl: /system/notice/view/{noticeId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/notice/view.html
+    x_permission: 无（模板未加 shiro 标签）
+    x_menuRef: "107"
+    x_note: 邮件信件式只读布局；正文以 th:utext 直出 HTML（不转义）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │                       [lblNoticeTitle]（居中）                │
+      │ [lblCreateBy] 发件人                        [lblCreateTime] 发送时间 │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [lblNoticeContent]（富文本正文）                              │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: lblNoticeTitle
+        type: LABEL
+        label: 公告标题
+        io: O
+        dataBinding: OBJ-SysNotice.noticeTitle
+      - id: lblCreateBy
+        type: LABEL
+        label: 发件人
+        io: O
+        dataBinding: OBJ-SysNotice.createBy
+      - id: lblCreateTime
+        type: LABEL
+        label: 发送时间
+        io: O
+        dataBinding: OBJ-SysNotice.createTime
+      - id: lblNoticeContent
+        type: LABEL
+        label: 公告内容
+        io: O
+        dataBinding: OBJ-SysNotice.noticeContent
+    actions: []
+
+  # ---------------------------------------------------------------------------
+  # 29. 任务详细（只读）
+  # ---------------------------------------------------------------------------
+  - screenId: frmJobDetail
+    name: 任务详细
+    screenType: SINGLE_FORM
+    x_routeUrl: /monitor/job/detail/{jobId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/monitor/job/detail.html
+    x_permission: monitor:job:detail
+    x_menuRef: "110"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 任务详细                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │      任务编号: [lblJobId]          任务名称: [lblJobName]      │
+      │      任务分组: [lblJobGroup]       调度类型: [lblJobType]      │
+      │      调用目标: [lblInvokeTarget]   执行表达式: [lblCronExpression]│
+      │      执行策略: [lblMisfirePolicy]  并发执行: [lblConcurrent]   │
+      │      任务状态: [lblStatus]         创建时间: [lblCreateTime]   │
+      │      备注:     [lblRemark]                                    │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnJobDetailClose]                                           │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: lblJobId
+        type: LABEL
+        label: 任务编号
+        io: O
+        dataBinding: OBJ-SysJob.jobId
+      - id: lblJobName
+        type: LABEL
+        label: 任务名称
+        io: O
+        dataBinding: OBJ-SysJob.jobName
+      - id: lblJobGroup
+        type: LABEL
+        label: 任务分组
+        io: O
+        dataBinding: OBJ-SysJob.jobGroup
+      - id: lblJobType
+        type: LABEL
+        label: 调度类型
+        io: O
+        dataBinding: OBJ-SysJob.jobType
+      - id: lblInvokeTarget
+        type: LABEL
+        label: 调用目标
+        io: O
+        dataBinding: OBJ-SysJob.invokeTarget
+      - id: lblCronExpression
+        type: LABEL
+        label: 执行表达式
+        io: O
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: lblMisfirePolicy
+        type: LABEL
+        label: 执行策略
+        io: O
+        dataBinding: OBJ-SysJob.misfirePolicy
+      - id: lblConcurrent
+        type: LABEL
+        label: 并发执行
+        io: O
+        dataBinding: OBJ-SysJob.concurrent
+      - id: lblStatus
+        type: LABEL
+        label: 任务状态
+        io: O
+        dataBinding: OBJ-SysJob.status
+      - id: lblCreateTime
+        type: LABEL
+        label: 创建时间
+        io: O
+        dataBinding: OBJ-SysJob.createTime
+      - id: lblRemark
+        type: LABEL
+        label: 备注
+        io: O
+        dataBinding: OBJ-SysJob.remark
+      - id: btnJobDetailClose
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actJobDetailClose
+        name: 关闭
+        behaviorRef: SysJob_CloseDetailForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 30. Cron 表达式生成器
+  # ---------------------------------------------------------------------------
+  - screenId: frmCronBuilder
+    name: Cron表达式生成器
+    screenType: SINGLE_FORM
+    x_routeUrl: /monitor/job/cron
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/monitor/job/cron.html
+    x_permission: 无（模板未加 shiro 标签）
+    x_menuRef: "110"
+    x_note: 由定时任务页工具栏「生成表达式」以 top.layer.open type=2 iframe 打开（事实：job.html cron()）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ Cron表达式生成器                                              │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 秒: (cboCronSecond)  分: (cboCronMinute)  时: (cboCronHour)   │
+      │ 日: (cboCronDay)     月: (cboCronMonth)   周: (cboCronWeek)   │
+      │ Cron表达式： [lblCronResult]（实时预览）                       │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnCronConfirm] [btnCronCancel]                              │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: cboCronSecond
+        type: COMBO
+        label: 秒
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cboCronMinute
+        type: COMBO
+        label: 分
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cboCronHour
+        type: COMBO
+        label: 时
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cboCronDay
+        type: COMBO
+        label: 日
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cboCronMonth
+        type: COMBO
+        label: 月
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: cboCronWeek
+        type: COMBO
+        label: 周
+        io: I
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: lblCronResult
+        type: LABEL
+        label: Cron表达式
+        io: O
+        dataBinding: OBJ-SysJob.cronExpression
+      - id: btnCronConfirm
+        type: BUTTON
+        label: 确定
+      - id: btnCronCancel
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actCronConfirm
+        name: 确定
+        behaviorRef: SysJob_ApplyCronExpression
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（回填父页 #cronExpression 与 #cronPreview）
+        x_http: 无
+        x_permission: 无
+      - actionId: actCronValidate
+        name: 校验表达式
+        behaviorRef: SysJob_CheckCronExpression
+        actionType: BUTTON
+        x_interfaceRef: API-SysJobController-checkCronExpressionIsValid
+        x_http: "POST /monitor/job/checkCronExpressionIsValid"
+        x_permission: 无
+      - actionId: actCronCancel
+        name: 关闭
+        behaviorRef: SysJob_CloseCronBuilder
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（layer.close）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 31. 用户选择（角色分配用户弹窗页）
+  # ---------------------------------------------------------------------------
+  - screenId: frmRoleSelectUser
+    name: 选择用户
+    screenType: LIST_MAINTENANCE
+    x_routeUrl: /system/role/authUser/selectUser/{roleId}
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/role/selectUser.html
+    x_permission: system:role:add
+    x_menuRef: "101"
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 选择用户                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ 登录名称:[txtLoginName] 手机号码:[txtPhonenumber]              │
+      │ [btnQuery] [btnReset]                                         │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [btnSelectUserConfirm] [btnSelectUserCancel]                  │
+      ├──────────────────────────────────────────────────────────────┤
+      │ @grdUnallocatedUser                                           │
+      │  □ | 用户ID | 登录名称 | 用户名称 | 邮箱 | 手机 | 用户状态 | 创建时间 │
+      │ [分页]                                                        │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtLoginName
+        type: TEXTBOX
+        label: 登录名称
+        io: I
+        dataBinding: OBJ-SysUser.loginName
+      - id: txtPhonenumber
+        type: TEXTBOX
+        label: 手机号码
+        io: I
+        dataBinding: OBJ-SysUser.phonenumber
+      - id: btnQuery
+        type: BUTTON
+        label: 搜索
+      - id: btnReset
+        type: BUTTON
+        label: 重置
+      - id: grdUnallocatedUser
+        type: GRID
+        label: 未分配用户列表
+        io: O
+        dataBinding: OBJ-SysUser.userId
+        dataSource: QR-SYS-USER-001
+      - id: btnSelectUserConfirm
+        type: BUTTON
+        label: 确定
+      - id: btnSelectUserCancel
+        type: BUTTON
+        label: 关闭
+    actions:
+      - actionId: actSelectUserQuery
+        name: 搜索
+        behaviorRef: SysRole_QueryUnallocatedUser
+        actionType: BUTTON
+        x_interfaceRef: API-SysRoleController-unallocatedList
+        x_http: "POST /system/role/authUser/unallocatedList"
+        x_permission: system:role:add
+      - actionId: actSelectUserReset
+        name: 重置
+        behaviorRef: SysRole_ResetUnallocatedQuery
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（$.form.reset()）
+        x_http: 无
+        x_permission: 无
+      - actionId: actSelectUserAdd
+        name: 确定
+        behaviorRef: SysRole_AddAuthUser
+        actionType: SUBMIT
+        x_interfaceRef: API-SysRoleController-selectAuthUserAll
+        x_http: "POST /system/role/authUser/selectAll"
+        x_permission: system:role:add
+        x_note: 打开弹窗用 GET /system/role/authUser/selectUser/{roleId}（API-SysRoleController-selectUser），提交用 POST /system/role/authUser/selectAll（API-SysRoleController-selectAuthUserAll）
+      - actionId: actSelectUserClose
+        name: 关闭
+        behaviorRef: SysRole_CloseSelectUserForm
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（closeItem()）
+        x_http: 无
+        x_permission: 无
+
+  # ---------------------------------------------------------------------------
+  # 32. 菜单图标选择器（菜单管理弹窗页）
+  # ---------------------------------------------------------------------------
+  - screenId: frmMenuIcon
+    name: 图标选择
+    screenType: QUERY_LIST
+    x_routeUrl: /system/menu/icon
+    x_templatePath: open-api/qvsu-openapi/src/main/resources/templates/system/menu/icon.html
+    x_permission: 无（模板未加 shiro 标签）
+    x_menuRef: "102"
+    x_note: 由菜单新增/修改页的「图标」输入框 focus 时以 div.icon-drop 内嵌展开，非独立弹窗（事实：templates/system/menu/add.html div.icon-drop）
+    layout: |
+      ┌──────────────────────────────────────────────────────────────┐
+      │ 图标选择                                                      │
+      ├──────────────────────────────────────────────────────────────┤
+      │ [txtIconKeyword]                                              │
+      │ @icoList（FontAwesome 图标网格，点击即回填 #icon）              │
+      │   ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                        │
+      │   ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦                                        │
+      └──────────────────────────────────────────────────────────────┘
+    elements:
+      - id: txtIconKeyword
+        type: TEXTBOX
+        label: 图标关键词
+        io: I
+        required: false
+      - id: icoList
+        type: GRID
+        label: 图标列表
+        io: I
+        dataBinding: OBJ-SysMenu.icon
+    actions:
+      - actionId: actMenuIconSelect
+        name: 选择图标
+        behaviorRef: SysMenu_SelectIcon
+        actionType: BUTTON
+        x_interfaceRef: 前端本地动作（把 i 元素 class 写入 #icon）
+        x_http: 无
+        x_permission: 无
+
+# =============================================================================
+# 覆盖自检与一致性门禁
+# =============================================================================
+# 【1｜菜单覆盖】business-architecture.md §5 登记的 16 个真实菜单节点（C 14 + M 2）对应关系：
+#   M 2 个：menuId "1"（MENU-sys-root）、"2100"（MENU-open-root）—— 均已建立
+#   C 14 个：100 / 101 / 102 / 103 / 104 / 105 / 106 / 107（系统管理域 8 个）
+#            110（MENU-job-manage，来自 sql/quartz.sql）
+#            2101 / 2102 / 2103 / 2104 / 2105（OpenAPI 域 5 个）
+#   —— 全部已建立（105 拆出 1051、110 拆出 1101 两个派生二级菜单，见各 x_note）
+#   另有 XY-home 一级菜单为**非菜单页面**的装载节点（3 个二级菜单），已显式标注为补建。
+#
+# 【2｜屏幕与模板覆盖】本文件 32 个屏幕，共覆盖 40 个真实模板文件：
+#   login.html、register.html、index.html、main.html、lock.html、
+#   error/unauth.html、
+#   system/user/{user,add,edit,view,resetPwd,authRole,deptTree}.html、
+#   system/user/profile/{profile,resetPwd,avatar}.html、
+#   system/role/{role,add,edit,dataScope,authUser,selectUser}.html、
+#   system/menu/{menu,add,edit,icon,tree}.html、
+#   system/dept/{dept,add,edit,tree}.html、
+#   system/post/{post,add,edit}.html、
+#   system/dict/type/{type,add,edit,tree}.html、
+#   system/dict/data/{data,add,edit}.html、
+#   system/config/{config,add,edit}.html、
+#   system/notice/{notice,add,edit,view}.html、
+#   monitor/job/{job,add,edit,detail,cron,jobLog}.html、
+#   open/app/{index,add,edit}.html、open/api/{index,add,edit}.html、
+#   open/auth/index.html、open/log/index.html、open/doc/index.html
+#   未纳入的模板（4 个，均已说明理由）：
+#     include.html（公共 th:fragment 片段，非页面）、index-topnav.html（横向菜单外壳变体，与 index.html 同构）、
+#     main_v1.html（RuoYi 演示仪表盘，硬编码示例数据）、skin.html（主题切换弹窗片段）
+#     error/404.html、error/500.html、error/service.html（通用错误页，无业务功能点）
+#   范围排除：templates/demo/**（73 个框架示例页）、templates/tool/build/build.html（代码生成工具，已移除）
+#
+# 【3｜查询绑定对照（MU.dataSource ↔ M7.id）】必须与 m7-report-model.yaml 一致：
+#   QR-SYS-USER-001 / QR-SYS-ROLE-001 / QR-SYS-MENU-001 / QR-SYS-DEPT-001 / QR-SYS-POST-001 /
+#   QR-SYS-DICTTYPE-001 / QR-SYS-DICTDATA-001 / QR-SYS-CONFIG-001 / QR-SYS-NOTICE-001 /
+#   QR-JOB-001 / QR-JOBLOG-001 / QR-OPEN-APP-001 / QR-OPEN-API-001 / QR-OPEN-LOG-001 /
+#   QR-OPEN-DOC-001 / QR-OPEN-LOG-002 / QR-OPEN-LOG-003 / QR-OPEN-AUTH-001
+#   —— 均已在 M7 文件中定义；本文件未引用 M7 中不存在的报表 ID。
+#
+# 【4｜M2 行为引用门禁（规范 §8.7 第 3、5 条）】
+#   - 本文件全部 actionPoint.behaviorRef 采用 `<聚合根>_<Action>` 命名，指向 M2 行为模型；
+#     M2 尚未产出，编写 m2-behavior-model.yaml 时必须建立同名行为（triggerType=USER_ACTION），
+#     否则本文件出现悬空引用。
+#   - 查询类 actionPoint 的 behaviorRef 与 M7 的 behaviorRef 逐字一致（如 SysUser_QueryList），
+#     保证 M7 ↔ M2 ↔ MU 三方一致。
+#   - 反向门禁：M2 中所有 triggerType=USER_ACTION 的行为必须至少被本文件一个 actionPoint 引用。
+#
+# 【5｜布局规则符合性（规范 §8.4、§8.7 第 7 条）】
+#   本系统实际布局只有 4 种，均已按规范映射：
+#     a) 列表维护（LIST_MAINTENANCE）：工具栏 + 树表格/表格，新增/编辑走弹窗或新页签 —— 20 个屏幕；
+#     b) 查询列表（QUERY_LIST）：查询条件一行多项 + 结果表格 + 分页 —— frmIndexFrame、frmMenuIcon；
+#     c) 单表维护（SINGLE_FORM）：表单 2 列（标签右对齐、控件左对齐）—— 登录/注册/工作台/个人中心/
+#        公告详情/任务详细/Cron 生成器/重置密码/头像/锁屏/用户详情/未授权 共 12 个屏幕；
+#     d) 左树右表特例：仅 frmSysUserList 一屏（ui-layout-west 组织机构 + ui-layout-center 列表），
+#        已在 x_layout 显式登记为规范三列布局之外的唯一特例。
+#   **未出现**：主从 3 列布局（MASTER_DETAIL_FORM）——本系统无主子表业务对象；react-flow / jsPlumb /
+#   bpmn-js 流程画布 —— 已核实 templates/ 下不存在。
+#
+# 【6｜审批双按钮规则（规范 §8.5）】本系统 M6 流程为空（无审批流）。
+#   全部屏幕均不含 actionType=DRAFT / SUBMIT 双按钮组合；SUBMIT 仅作为「表单提交保存」语义使用，
+#   不引用 M6 审批流 trigger.behaviorRef。故 §8.5 强制条款在本系统不触发。
+#
+# 【7｜推断与假设清单（全部集中在文件头【约定 2】【约定 3】【约定 4】与各处 x_note）】
+#   框架级事实（非推断，附源码行号）：表格 POST + pageSize/pageNum 映射 + .time-input 绑定 laydate
+#     + jQuery validate 校验 —— 见文件头【框架级 UI 事实】A~D，依据 ry-ui.js:41,43,49-50,169-174、
+#     common.js:90-94,409。
+#   推断 1：screenId 命名规则（模板无页面级 id 时按 frm<实体><用途>）—— 依据 ry-ui.js 的 #bootstrap-table 约定
+#   推断 2：dataBinding 用 OBJ-* + database-schema.md 字段名 —— 依据 domain-model.md 与 database-schema.md
+#   推断 3：behaviorRef 用 <聚合根>_<Action> —— 依据本体规范既有命名 Contract_QueryList
+#   推断 4：RICH_TEXT（summernote）与 FILE_UPLOAD（file input + cropper）按最近映射记为 TEXTAREA/TEXTBOX
+#           —— MU-spec §8.2.6 控件枚举缺这两类，故就近映射并在元素上用 x_controlTypeOverride 标注真实控件
+#   假设 1：XY-home / XY-home-main / XY-home-profile 三个装载菜单节点为补建（首页与个人中心不在 sys_menu 中）
+#   假设 2：1051「字典数据」与 1101「调度日志」两个二级菜单为拆分节点（原为页内页签/弹窗）
+#
+# 【8｜已知前端与后端不一致（如实登记，不掩盖）】
+#   - `templates/system/role/selectUser.html` 的提交端点未在本文件逐字确认：本文件按 interface-index.md
+#     的 API-SysRoleController-selectAuthUserAll（POST /system/role/authUser/selectAll）填写，并同时登记
+#     其打开弹窗端点 API-SysRoleController-selectUser（GET /system/role/authUser/selectUser/{roleId}）。
+#   - open 模块 9 个模板**全部未使用** `shiro:hasPermission` 标签（system/monitor 模块普遍使用），
+#     故 open 域各 actionPoint 的 x_permission 均取自 sys_menu 的菜单/按钮权限码，而非模板标签；
+#     这与 consistency-report.md 的 `Q-79-endpoints-without-permission`（open 域 36 个管理端点无权限码）一致。
+#   - `templates/system/user/user.html` 的「修改/新增」走**新页签**（`$.operate.addTab/editTab`）而非弹窗，
+#     与 MU-spec §8.4.4 建议的「新增/编辑走弹窗」表述不同；本文件按其真实实现登记，布局已如实绘制。
+# =============================================================================

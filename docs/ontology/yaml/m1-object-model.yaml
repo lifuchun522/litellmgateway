@@ -1,0 +1,2618 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# M1 对象模型元文件 - m1-object-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务）
+# 技术底座：Spring Boot + MyBatis + Shiro + PostgreSQL（代码位于 open-api/qvsu-openapi）
+#
+# 【来源】本文件基于已通过校验的逆向元模型产出，未凭空发明业务。主要来源：
+#   - docs/meta-model/domain-model.md            → 33 个领域对象与物理表映射、聚合根判定
+#   - docs/meta-model/database-schema.md         → 34 张表 342 个字段的类型/可空/默认/注释
+#   - docs/meta-model/business-architecture.md   → 4 个业务域、18 个业务能力、9 个场景、16 个菜单
+#   - docs/meta-model/common-capability-index.md → 14 项公共能力与 44 个能力接口
+#   - docs/meta-model/source-asset-inventory.md  → 权限码登记表（55 个）、菜单资产登记表
+#   - open-api/deploy/local-docker/postgres/init/10-qvsu.sql、30-open-api.sql、35-quartz.sql
+#   - open-api/sql/open_api_menu.sql、sql/quartz.sql
+#   - 源码：com.qvsu.open.*、com.qvsu.system.service.impl.*、com.qvsu.framework.aspectj.DataScopeAspect
+#
+# 【书写约定】
+#   1. 键名严格使用《M1 对象模型规范》给出的键名，不新增键名；规范外的补充语义一律写成中文注释。
+#   2. 每个属性下方以注释登记物理列证据，格式：
+#        # 物理列 <表>.<列> ｜ <DB 类型(长度)> ｜ <可空/非空> ｜ <默认值> ｜ <枚举/字典>
+#      便于与本体属性逐条对账到 database-schema.md。
+#   3. 类型映射：BIGINT/INT/INTEGER/SMALLINT → Integer；VARCHAR/TEXT/CHAR(1)→ String；
+#      TIMESTAMP → DateTime；CHAR(1) 且取值受控 → Enum。Money/Decimal 在库中不存在，故本文件不出现。
+#   4. 枚举取值来源分两类，避免重复建模：
+#      - 值集来自 sys_dict_type / sys_dict_data 种子数据 → 属性用 DictionaryRef，字典登记在 data_dictionaries；
+#      - 值集只由源码/DDL 注释定义（无字典行）→ 属性用 Enum + enumValues。
+#   5. 所有推断项以 `# 推断` 标注；确实无法从源码确认的以 `# 假设：原因` 标注。
+#   6. 物理表 s_status / s_is_del / s_created_time / s_updated_time 四列为 open-api 兼容列，
+#      与 create_time/update_time 语义重复，本模型如实登记并标注 `# 推断`。
+#   7. 审计信息等被 10 余个聚合共用的值对象，在文件末尾 value_objects 目录中集中登记一次，
+#      属性以 type: ValueObject + valueObjectRef: <值对象 name> 引用（规范要求 valueObjectRef 指向值对象名称）。
+#   8. 聚合间一律以 ID 或业务键引用，不建立对象引用；凡物理表未保存目标主键（仅存业务键快照）者均标注 `# 推断`。
+# ══════════════════════════════════════════════════════════════════════════════
+
+model_type: OBJECT
+version: "2.1"
+domain: "QVSU OpenAPI 管理与网关服务"
+
+aggregates:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-open 开放平台域（com.qvsu.open）—— 应用
+  # 域内能力：CAP-open-app、CAP-open-auth、CAP-open-gateway-auth（只读本聚合）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-OPEN-APP-001
+    name: 开放应用
+    alias: OpenApp
+    aggregateType: AGGREGATE_ROOT
+    description: 接入开放平台的第三方应用身份主体，持有应用 Key 与密钥，是网关鉴权与接口授权的唯一入口；删除应用时级联清理其接口授权关系
+    lifecycle: [启用, 停用, 已过期]
+    tags: [开放平台域, 核心域, 凭据敏感]
+
+    attributes:
+      - name: sId
+        label: 应用主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 open_app.s_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认 ｜ 网关与授权表均以此 ID 关联
+      - name: appName
+        label: 应用名称
+        type: String
+        required: true
+        # 物理列 open_app.app_name ｜ VARCHAR(100) ｜ 非空 ｜ 无默认 ｜ 应用展示名，允许重名
+      - name: appKey
+        label: 应用 Key
+        type: String
+        required: true
+        unique: true
+        # 物理列 open_app.app_key ｜ VARCHAR(64) ｜ 非空 ｜ 无默认 ｜ DDL 唯一约束 UNIQUE
+        # 未填写时由 OpenManageService.genAppKey() 生成 "ak_" + UUID 前 16 位
+        refRules:
+          - name: 应用 Key 前缀约定
+            description: 自动生成的应用 Key 以 ak_ 开头，长度 19
+            expression: "LENGTH(value) == 19 AND STARTS_WITH(value, 'ak_')"
+            violationMessage: 应用 Key 必须为系统生成的 ak_ 前缀 19 位字符串
+            enforcedAt: ALWAYS
+      - name: appSecret
+        label: 应用密钥
+        type: String
+        required: true
+        # 物理列 open_app.app_secret ｜ VARCHAR(128) ｜ 非空 ｜ 无默认 ｜ 敏感凭据（Sensitivity=是（凭据类））
+        # 未填写时由 genAppSecret() 生成 "sk_" + UUID；可通过 resetSecret 重置
+      - name: contact
+        label: 联系人
+        type: String
+        # 物理列 open_app.contact ｜ VARCHAR(100) ｜ 可空 ｜ 无默认 ｜ 业务联系人（自由文本，无格式校验）
+      - name: status
+        label: 应用状态
+        type: Enum
+        required: true
+        defaultValue: "1"
+        enumValues: ["1", "0"]
+        # 物理列 open_app.status ｜ smallint ｜ 可空 ｜ 默认 1 ｜ 1=enabled 0=disabled（DDL 注释原文）
+        # 网关仅放行 status=1 的应用；insertApp 缺省写入 1
+      - name: expireTime
+        label: 过期时间
+        type: DateTime
+        # 物理列 open_app.expire_time ｜ timestamp ｜ 可空 ｜ 无默认 ｜ NULL=永不过期（DDL 注释原文 "expire_time, NULL=never"）
+        # 网关条件：expire_time is null or expire_time > now()
+      - name: remark
+        label: 备注
+        type: String
+        # 物理列 open_app.remark ｜ VARCHAR(500) ｜ 可空 ｜ 无默认 ｜ DDL 无注释，含义按管理页面语义定为备注 ｜ # 推断
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 开放平台审计信息
+        # 物理列 open_app.create_time / update_time / s_status / s_is_del / s_created_time / s_updated_time
+        # 见文件末尾 value_objects 中的 VO-OPT-AUDIT-INFO
+
+    valueObjects:
+      - name: 网关鉴权上下文
+        alias: OpenAuthContext
+        description: 网关鉴权成功后向代理环节传递的上下文（应用标识、目标地址、超时），非持久化对象
+        attributes:
+          - name: appKey
+            label: 应用 Key
+            type: String
+          - name: appName
+            label: 应用名称
+            type: String
+          - name: apiPath
+            label: 请求路径
+            type: String
+          - name: method
+            label: 请求方法
+            type: String
+          - name: targetUrl
+            label: 后端目标地址
+            type: String
+          - name: timeoutMs
+            label: 转发超时毫秒
+            type: Integer
+        immutable: true
+        equalityFields: [appKey, apiPath, method]
+        # 来源：docs/meta-model/domain-model.md OBJ-OpenAuthContext（value-object，无物理表）
+
+    entities:
+      - name: 应用接口授权
+        alias: OpenAppApi
+        description: 应用与开放接口的多对多授权关系，网关运行期判定授权的唯一依据；由「授权管理」以覆盖式保存（先删后插）维护
+        localId: sId
+        cardinality: ZERO_OR_MORE
+        cascadeDelete: true
+        # 删除应用时 OpenManageService.deleteAppByIds 先 delete open_app_api where app_id in (...)
+        attributes:
+          - name: sId
+            label: 授权记录主键
+            type: Integer
+            required: true
+            unique: true
+            # 物理列 open_app_api.s_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+          - name: appId
+            label: 所属应用
+            type: AggregateRootRef
+            targetAggregate: AGG-OPEN-APP-001
+            required: true
+            # 物理列 open_app_api.app_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 api_id 组成唯一约束 UNIQUE(app_id, api_id)
+          - name: apiId
+            label: 授权接口
+            type: AggregateRootRef
+            targetAggregate: AGG-OPEN-API-001
+            required: true
+            # 物理列 open_app_api.api_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 app_id 组成唯一约束 UNIQUE(app_id, api_id)
+          - name: createTime
+            label: 授权时间
+            type: DateTime
+            # 物理列 open_app_api.create_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP
+          - name: updateTime
+            label: 更新时间
+            type: DateTime
+            # 物理列 open_app_api.update_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP ｜ 覆盖式保存时 upsert 刷新
+          - name: auditInfo
+            label: 审计信息
+            type: ValueObject
+            valueObjectRef: 开放平台审计信息
+
+    invariants:
+      - name: 应用 Key 全局唯一
+        expression: "COUNT(OpenApp WHERE appKey == this.appKey AND sId != this.sId) == 0"
+        violationMessage: 应用 Key 已存在，请重新生成或更换 Key
+        enforcedAt: ON_CREATE
+        # 证据：30-open-api.sql 第 11 行 app_key VARCHAR(64) NOT NULL UNIQUE；OpenManageService.insertApp
+        # 未做应用层查重，故当前唯一性仅由数据库唯一约束保证
+      - name: 启用应用必须拥有有效密钥
+        expression: "status != '1' OR (LENGTH(appSecret) > 0 AND LENGTH(appKey) > 0)"
+        violationMessage: 启用状态的应用必须同时具备应用 Key 与应用密钥
+        enforcedAt: ALWAYS
+        # 推断：DDL 已声明 app_key/app_secret 非空，此处将「启用」与「凭据存在」的业务含义显式化
+      - name: 过期时间不得早于创建时间
+        expression: "expireTime == NULL OR expireTime > createTime"
+        violationMessage: 过期时间必须晚于应用创建时间
+        enforcedAt: ON_CREATE
+        # 推断：DDL 未约束，但管理页面允许直接录入 expire_time，无校验会导致应用创建即失效
+      - name: 删除应用级联清理授权关系
+        expression: "DELETE(OpenApp) IMPLIES COUNT(OpenAppApi WHERE appId == this.sId) == 0"
+        violationMessage: 删除应用的同时必须清除其全部接口授权关系
+        enforcedAt: ON_DELETE
+        # 证据：OpenManageService.deleteAppByIds（先删 open_app_api 再删 open_app，@Transactional）
+      - name: 授权记录不重复
+        expression: "COUNT(OpenAppApi WHERE appId == this.appId AND apiId == this.apiId) <= 1"
+        violationMessage: 同一应用对同一接口不能重复授权
+        enforcedAt: ALWAYS
+        # 证据：30-open-api.sql 第 55 行 UNIQUE (app_id, api_id)；saveAppAuth 亦做 apiIds.distinct()
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-open 开放平台域 —— 接口
+  # 域内能力：CAP-open-api、CAP-open-gateway-auth / CAP-open-gateway-proxy（只读本聚合）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-OPEN-API-001
+    name: 开放接口
+    alias: OpenApi
+    aggregateType: AGGREGATE_ROOT
+    description: 对外开放的接口定义主数据，登记对外路径、请求方法、后端目标地址、转发超时与是否验签，是网关路由与鉴权的配置来源
+    lifecycle: [启用, 停用]
+    tags: [开放平台域, 核心域]
+
+    attributes:
+      - name: sId
+        label: 接口主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 open_api.s_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: apiName
+        label: 接口名称
+        type: String
+        required: true
+        # 物理列 open_api.api_name ｜ VARCHAR(100) ｜ 非空 ｜ 无默认 ｜ DDL 注释 "api name"
+      - name: apiPath
+        label: 对外接口路径
+        type: String
+        required: true
+        unique: true
+        # 物理列 open_api.api_path ｜ VARCHAR(200) ｜ 非空 ｜ 无默认 ｜ DDL 唯一约束 UNIQUE
+        # DDL 注释 "api path, e.g. /open/order/list"；网关以 requestURI 精确匹配（末尾 / 会被归一化去掉）
+        refRules:
+          - name: 对外开放路径格式
+            description: 对外路径必须以 / 开头，且唯一的接口编码即此路径
+            expression: "STARTS_WITH(value, '/')"
+            violationMessage: 接口路径必须以 / 开头
+            enforcedAt: ALWAYS
+            # 推断：DDL 未约束，但网关按 requestURI 前缀 /open/ 过滤并要求精确匹配，非 / 开头无法被路由
+      - name: method
+        label: 请求方法
+        type: Enum
+        defaultValue: "POST"
+        enumValues: ["POST", "GET", "PUT", "DELETE", "PATCH"]
+        # 物理列 open_api.method ｜ VARCHAR(10) ｜ 可空 ｜ 默认 'POST' ｜ DDL 无枚举注释
+        # 取值域来自 com.qvsu.quartz 中同名字段注释与 OpenApiProxyService 支持的 HTTP 方法 ｜ # 推断
+      - name: targetUrl
+        label: 后端目标地址
+        type: String
+        required: true
+        # 物理列 open_api.target_url ｜ VARCHAR(500) ｜ 非空 ｜ 无默认 ｜ DDL 注释 "target url"
+      - name: timeoutMs
+        label: 转发超时毫秒
+        type: Integer
+        defaultValue: 5000
+        # 物理列 open_api.timeout_ms ｜ INT ｜ 可空 ｜ 默认 5000 ｜ 网关转发连接与读取超时
+        refRules:
+          - name: 超时必须为正
+            description: 转发超时为正整数，缺省按 5000 毫秒处理
+            expression: "value > 0"
+            violationMessage: 转发超时必须是大于 0 的毫秒数
+            enforcedAt: ALWAYS
+            # 证据：OpenApiProxyService.buildFactory：timeoutMs == null || timeoutMs <= 0 ? 5000 : timeoutMs
+      - name: status
+        label: 接口状态
+        type: Enum
+        required: true
+        defaultValue: "1"
+        enumValues: ["1", "0"]
+        # 物理列 open_api.status ｜ smallint ｜ 可空 ｜ 默认 1 ｜ 1=enabled 0=disabled（DDL 注释原文）
+        # 网关仅放行 status=1 的接口；disabled 时返回错误码 40004
+      - name: needSign
+        label: 是否需要签名
+        type: Enum
+        defaultValue: "1"
+        enumValues: ["1", "0"]
+        # 物理列 open_api.need_sign ｜ smallint ｜ 可空 ｜ 默认 1 ｜ 1=sign required（DDL 注释原文）
+        # need_sign=0 时网关跳过全部鉴权并把 appName 置为 anonymous（OpenApiSecurityService 第 61-72 行）
+      - name: description
+        label: 接口说明
+        type: String
+        # 物理列 open_api.description ｜ VARCHAR(500) ｜ 可空 ｜ 无默认 ｜ DDL 无注释
+      - name: reqExample
+        label: 请求示例
+        type: String
+        # 物理列 open_api.req_example ｜ TEXT ｜ 可空 ｜ 无默认 ｜ 供文档生成使用
+      - name: respExample
+        label: 响应示例
+        type: String
+        # 物理列 open_api.resp_example ｜ TEXT ｜ 可空 ｜ 无默认 ｜ 供文档生成使用
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 开放平台审计信息
+
+    invariants:
+      - name: 接口路径全局唯一
+        expression: "COUNT(OpenApi WHERE apiPath == this.apiPath AND sId != this.sId) == 0"
+        violationMessage: 接口路径已存在，同一对外路径只能定义一条接口
+        enforcedAt: ON_CREATE
+        # 证据：30-open-api.sql 第 28 行 api_path VARCHAR(200) NOT NULL UNIQUE
+        # 业务影响：唯一约束落在 api_path 单列而非 (api_path, method)，因此一个路径只能登记一种方法；
+        # 网关的「非 POST 回退 POST」兼容逻辑依赖此约束
+      - name: 启用接口必须配置目标地址
+        expression: "status != '1' OR LENGTH(targetUrl) > 0"
+        violationMessage: 启用状态的接口必须配置后端目标地址
+        enforcedAt: ALWAYS
+        # 推断：DDL 已声明 target_url 非空；此不变性把「启用」与「可转发」绑定
+      - name: 删除接口级联清理授权关系
+        expression: "DELETE(OpenApi) IMPLIES COUNT(OpenAppApi WHERE apiId == this.sId) == 0"
+        violationMessage: 删除接口的同时必须清除其全部应用授权关系
+        enforcedAt: ON_DELETE
+        # 证据：OpenManageService.deleteApiByIds（先删 open_app_api 再删 open_api，@Transactional）
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-open 开放平台域 —— 接口文档
+  # 域内能力：CAP-open-doc
+  # 聚合根判定：open_api_doc 与 open_api 无外键、以 api_ids 逗号串保存快照，
+  #   可独立生成/预览/下载，删除接口不影响已生成文档 → 独立聚合根 ｜ # 推断
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-OPEN-DOC-001
+    name: 接口文档
+    alias: OpenApiDoc
+    aggregateType: AGGREGATE_ROOT
+    description: 基于接口定义一次生成的 HTML 接口文档快照，记录所属应用、版本、接口集合与文档正文，支持在线预览与下载
+    lifecycle: [已生成]
+    tags: [开放平台域]
+
+    attributes:
+      - name: sId
+        label: 文档主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 open_api_doc.s_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: appId
+        label: 所属应用
+        type: AggregateRootRef
+        targetAggregate: AGG-OPEN-APP-001
+        # 物理列 open_api_doc.app_id ｜ BIGINT ｜ 可空 ｜ 无默认 ｜ database-schema 记为「PK/候选键（推断）」
+        # 生成文档时按所选应用聚合其已授权接口；允许为空以支持「不指定应用」的全量文档 ｜ # 推断
+      - name: docTitle
+        label: 文档标题
+        type: String
+        # 物理列 open_api_doc.doc_title ｜ VARCHAR(100) ｜ 可空 ｜ 无默认
+      - name: docVersion
+        label: 文档版本
+        type: String
+        # 物理列 open_api_doc.doc_version ｜ VARCHAR(20) ｜ 可空 ｜ 无默认
+      - name: apiIds
+        label: 包含的接口集合
+        type: String
+        # 物理列 open_api_doc.api_ids ｜ VARCHAR(500) ｜ 可空 ｜ 无默认 ｜ 逗号分隔的 open_api.s_id 快照
+        # 假设：以逗号串而非关联表保存，故无引用完整性约束，接口被删后文档仍保留快照
+      - name: htmlContent
+        label: 文档正文
+        type: String
+        # 物理列 open_api_doc.html_content ｜ TEXT ｜ 可空 ｜ 无默认 ｜ 由 ApiDocService 渲染的 HTML 全文
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 开放平台审计信息
+
+    invariants:
+      - name: 文档必须包含正文与标题
+        expression: "LENGTH(htmlContent) > 0 AND LENGTH(docTitle) > 0"
+        violationMessage: 生成的接口文档必须包含文档标题与正文内容
+        enforcedAt: ON_CREATE
+        # 推断：DDL 允许空，但 saveDoc 只在 generate 成功且渲染出 HTML 后被调用
+      - name: 接口集合快照不可为空
+        expression: "apiIds != NULL AND LENGTH(apiIds) > 0"
+        violationMessage: 请至少选择一个接口再生成文档
+        enforcedAt: ON_CREATE
+        # 推断：OpenDocController.generate 接收接口集合，空集合生成的文档无业务意义
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-open 开放平台域 —— 调用日志
+  # 域内能力：CAP-open-log
+  # 聚合根判定：由网关在 finally 无条件写入、独立生命周期、不随应用/接口删除而级联 → 独立聚合根
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-OPEN-CALLLOG-001
+    name: 开放接口调用日志
+    alias: OpenCallLog
+    aggregateType: AGGREGATE_ROOT
+    description: 每一次 /open/** 请求的调用流水，记录链路 ID、调用方快照、请求与响应报文、耗时、结果状态与客户端 IP，供查询、统计与 CSV 导出
+    lifecycle: [成功, 鉴权失败, 系统异常]
+    tags: [开放平台域, 审计]
+
+    attributes:
+      - name: sId
+        label: 日志主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 open_call_log.s_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: traceId
+        label: 链路 ID
+        type: String
+        required: true
+        # 物理列 open_call_log.trace_id ｜ VARCHAR(64) ｜ 非空 ｜ 无默认 ｜ 取请求头 X-Trace-Id，缺省由 UUID 生成
+        unique: false
+        # 说明：traceId 不唯一（同一 trace 在转发异常时也可能只有一条），故不置 unique
+      - name: appKey
+        label: 调用方应用 Key
+        type: String
+        # 物理列 open_call_log.app_key ｜ VARCHAR(64) ｜ 可空 ｜ 无默认 ｜ 敏感凭据；鉴权失败时可为空或为非法值
+        # 说明：日志保存的是 app_key 快照而非 open_app 外键 ｜ # 推断
+      - name: appName
+        label: 调用方应用名称
+        type: String
+        # 物理列 open_call_log.app_name ｜ VARCHAR(100) ｜ 可空 ｜ 无默认 ｜ 冗余展示字段；跳过验签时写 anonymous
+      - name: apiPath
+        label: 请求路径
+        type: String
+        # 物理列 open_call_log.api_path ｜ VARCHAR(200) ｜ 可空 ｜ 无默认 ｜ 保存的是对外路径快照
+      - name: method
+        label: 请求方法
+        type: String
+        # 物理列 open_call_log.method ｜ VARCHAR(10) ｜ 可空 ｜ 无默认
+      - name: reqHeaders
+        label: 请求头
+        type: String
+        # 物理列 open_call_log.req_headers ｜ TEXT ｜ 可空 ｜ 无默认 ｜ JSON 序列化文本
+      - name: reqBody
+        label: 请求体
+        type: String
+        # 物理列 open_call_log.req_body ｜ TEXT ｜ 可空 ｜ 无默认 ｜ 按 TEXT_MAX_LENGTH=4000 截断后落库
+      - name: respCode
+        label: HTTP 响应码
+        type: Integer
+        # 物理列 open_call_log.resp_code ｜ INT ｜ 可空 ｜ 无默认 ｜ 网关统一以 HTTP 200 返回，业务码在 resp_body 内
+      - name: respHeaders
+        label: 响应头
+        type: String
+        # 物理列 open_call_log.resp_headers ｜ TEXT ｜ 可空 ｜ 无默认 ｜ JSON 序列化文本
+      - name: respBody
+        label: 响应体
+        type: String
+        # 物理列 open_call_log.resp_body ｜ TEXT ｜ 可空 ｜ 无默认 ｜ 按 TEXT_MAX_LENGTH=4000 截断后落库
+      - name: costMs
+        label: 耗时毫秒
+        type: Integer
+        # 物理列 open_call_log.cost_ms ｜ INT ｜ 可空 ｜ 无默认 ｜ 从进入过滤器到写日志的墙钟耗时
+      - name: status
+        label: 调用结果状态
+        type: Enum
+        enumValues: ["0", "1", "2"]
+        # 物理列 open_call_log.status ｜ smallint ｜ 可空 ｜ 无默认 ｜ DDL 注释 "0=ok 1=auth-fail 2=proxy-fail"
+        # 与 OpenApiFilter 中 status 变量一致：0 成功、1 鉴权失败（OpenApiSecurityException）、2 转发/系统异常
+      - name: errorMsg
+        label: 错误信息
+        type: String
+        # 物理列 open_call_log.error_msg ｜ VARCHAR(500) ｜ 可空 ｜ 无默认 ｜ 鉴权异常或转发异常的消息
+      - name: clientIp
+        label: 客户端 IP
+        type: String
+        # 物理列 open_call_log.client_ip ｜ VARCHAR(64) ｜ 可空 ｜ 无默认 ｜ 优先 X-Forwarded-For 首段，其次 X-Real-IP，最后 remoteAddr
+      - name: callTime
+        label: 调用时间
+        type: DateTime
+        # 物理列 open_call_log.call_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP ｜ 统计口径按 call_time::date
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 开放平台审计信息
+
+    valueObjects:
+      - name: 开放平台统一返回结构
+        alias: OpenResult
+        description: 网关对第三方的统一响应包装（code/msg/data/traceId），非持久化；其 JSON 文本被写入本聚合的 resp_body
+        attributes:
+          - name: code
+            label: 业务码
+            type: Integer
+          - name: msg
+            label: 提示信息
+            type: String
+          - name: data
+            label: 数据体
+            type: String
+          - name: traceId
+            label: 链路 ID
+            type: String
+        immutable: true
+        equalityFields: [code, traceId]
+        # 来源：docs/meta-model/domain-model.md OBJ-OpenResult；失败码集合见 data_dictionaries 的 OPEN_RESULT_CODE
+
+    invariants:
+      - name: 每次调用必留痕
+        expression: "COUNT(OpenCallLog WHERE traceId == this.traceId) >= 1"
+        violationMessage: 开放接口调用必须写入调用日志
+        enforcedAt: ALWAYS
+        # 证据：OpenApiFilter 的 finally 块无条件调用 openApiLogService.save(...)，覆盖成功/鉴权失败/转发异常
+      - name: 报文落库长度受限
+        expression: "LENGTH(reqBody) <= 4000 AND LENGTH(respBody) <= 4000"
+        violationMessage: 调用日志请求体与响应体需按 4000 字符截断
+        enforcedAt: ON_CREATE
+        # 证据：business-architecture.md SCN-open-call-log「均按 TEXT_MAX_LENGTH=4000 截断后落库」
+      - name: 链路 ID 必填
+        expression: "LENGTH(traceId) > 0"
+        violationMessage: 调用日志必须携带链路 ID
+        enforcedAt: ON_CREATE
+        # 证据：30-open-api.sql 第 60 行 trace_id VARCHAR(64) NOT NULL
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域（com.qvsu.system）—— 用户
+  # 域内能力：CAP-sys-user-org、CAP-auth-session（认证只读）、CAP-operation-audit（只读）
+  # 聚合内子实体：用户-角色关联、用户-岗位关联（随用户级联删除）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-USER-001
+    name: 用户
+    alias: SysUser
+    aggregateType: AGGREGATE_ROOT
+    description: 后台系统用户账号，归属一个部门、可拥有多个角色与岗位；账号状态与逻辑删除标志共同决定其能否登录
+    lifecycle: [正常, 停用, 已删除]
+    tags: [系统管理域, 核心域, 权限治理]
+
+    attributes:
+      - name: userId
+        label: 用户 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_user.user_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认 ｜ 角色/岗位关联表均以此 ID 关联
+      - name: deptId
+        label: 所属部门
+        type: AggregateRootRef
+        targetAggregate: AGG-SYS-DEPT-001
+        # 物理列 sys_user.dept_id ｜ BIGINT ｜ 可空 ｜ 默认 null ｜ database-schema 记为「PK/候选键（推断）」
+        # 业务：为空表示未分配部门；数据范围过滤依赖该列
+      - name: loginName
+        label: 登录账号
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_user.login_name ｜ VARCHAR(30) ｜ 非空 ｜ 无默认
+        # 应用层 checkLoginNameUnique 校验，DDL 未声明唯一约束 ｜ # 推断：唯一性靠应用层保证
+        refRules:
+          - name: 登录账号长度范围
+            description: 登录账号长度 2 到 20 个字符
+            expression: "LENGTH(value) >= 2 AND LENGTH(value) <= 20"
+            violationMessage: 登录账号长度必须在 2 到 20 个字符之间
+            enforcedAt: ALWAYS
+            # 证据：UserConstants.USERNAME_MIN_LENGTH=2 / USERNAME_MAX_LENGTH=20
+      - name: userName
+        label: 用户昵称
+        type: String
+        # 物理列 sys_user.user_name ｜ VARCHAR(30) ｜ 可空 ｜ 默认 ''
+      - name: userType
+        label: 用户类型
+        type: Enum
+        defaultValue: "00"
+        enumValues: ["00", "01"]
+        # 物理列 sys_user.user_type ｜ VARCHAR(2) ｜ 可空 ｜ 默认 '00' ｜ 00系统用户 01注册用户（DDL 注释原文）
+      - name: email
+        label: 用户邮箱
+        type: String
+        # 物理列 sys_user.email ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 应用层 checkEmailUnique 校验
+      - name: phonenumber
+        label: 手机号码
+        type: String
+        # 物理列 sys_user.phonenumber ｜ VARCHAR(11) ｜ 可空 ｜ 默认 '' ｜ 应用层 checkPhoneUnique 校验
+        refRules:
+          - name: 手机号格式
+            description: 手机号需匹配 13x/14x/15x/18x 且共 11 位
+            expression: "value == '' OR MATCHES(value, '^0{0,1}(13[0-9]|15[0-9]|14[0-9]|18[0-9])[0-9]{8}$')"
+            violationMessage: 手机号码格式不正确
+            enforcedAt: ALWAYS
+            # 证据：UserConstants.MOBILE_PHONE_NUMBER_PATTERN
+      - name: sex
+        label: 用户性别
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_USER_SEX
+        # 物理列 sys_user.sex ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0男 1女 2未知
+      - name: avatar
+        label: 头像路径
+        type: String
+        # 物理列 sys_user.avatar ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ 由 SysProfileController 头像上传写入
+      - name: password
+        label: 密码
+        type: String
+        # 物理列 sys_user.password ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 敏感凭据
+        # 存储 Md5Hash(loginName + password + salt) 的十六进制串（32 位）
+        refRules:
+          - name: 密码散列长度
+            description: 落库密码为 32 位 MD5 十六进制串
+            expression: "value == '' OR LENGTH(value) == 32"
+            violationMessage: 密码必须经过 MD5 加盐散列后存储
+            enforcedAt: ALWAYS
+            # 证据：SysPasswordService.encryptPassword = new Md5Hash(loginName + password + salt).toHex()
+      - name: salt
+        label: 盐加密
+        type: String
+        # 物理列 sys_user.salt ｜ VARCHAR(20) ｜ 可空 ｜ 默认 '' ｜ 敏感凭据
+        # 由 ShiroUtils.randomSalt() 生成 6 位十六进制（3 字节）
+      - name: status
+        label: 账号状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_user.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1停用
+        # 登录校验：status='1' 抛 UserBlockedException（用户已停用）
+      - name: delFlag
+        label: 删除标志
+        type: Enum
+        defaultValue: "0"
+        enumValues: ["0", "2"]
+        # 物理列 sys_user.del_flag ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ DDL 注释「0代表存在 2代表删除」
+        # 登录校验：del_flag='2' 抛 UserDeleteException（用户已删除）
+      - name: loginIp
+        label: 最后登录 IP
+        type: String
+        # 物理列 sys_user.login_ip ｜ VARCHAR(128) ｜ 可空 ｜ 默认 '' ｜ 登录成功后由 recordLoginInfo 更新
+      - name: loginDate
+        label: 最后登录时间
+        type: DateTime
+        # 物理列 sys_user.login_date ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: pwdUpdateDate
+        label: 密码最后更新时间
+        type: DateTime
+        # 物理列 sys_user.pwd_update_date ｜ timestamp ｜ 可空 ｜ 无默认 ｜ 与参数 sys.account.passwordValidateDays 配合提示改密
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    valueObjects:
+      - name: 登录失败重试计数
+        alias: LoginRetryRecord
+        description: 以登录账号为键、记录连续失败次数的会话级计数（Ehcache loginRecordCache，非持久化）
+        attributes:
+          - name: loginName
+            label: 登录账号
+            type: String
+          - name: retryCount
+            label: 重试次数
+            type: Integer
+        immutable: false
+        equalityFields: [loginName]
+        # 证据：SysPasswordService.loginRecordCache（ShiroConstants.LOGIN_RECORD_CACHE）
+        # 缓存 maxEntriesLocalHeap=2000、timeToIdleSeconds=600；登录成功即 clearLoginRecordCache 清零
+        # 该值不落库，故不构成物理列；将其建模为值对象以承载 M3 的登录重试规则 ｜ # 推断
+
+    entities:
+      - name: 用户角色关联
+        alias: SysUserRole
+        description: 用户与角色的多对多关联，随用户级联删除；分配角色时整表先删后插
+        localId: userId
+        cardinality: ZERO_OR_MORE
+        cascadeDelete: true
+        # 证据：com.qvsu.system.service.impl.SysUserServiceImpl 的 deleteUserByIds / insertUserAuth
+        attributes:
+          - name: userId
+            label: 用户 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-USER-001
+            required: true
+            # 物理列 sys_user_role.user_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 role_id 组成联合主键
+          - name: roleId
+            label: 角色 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-ROLE-001
+            required: true
+            # 物理列 sys_user_role.role_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 user_id 组成联合主键
+      - name: 用户岗位关联
+        alias: SysUserPost
+        description: 用户与岗位的多对多关联，随用户级联删除
+        localId: userId
+        cardinality: ZERO_OR_MORE
+        cascadeDelete: true
+        attributes:
+          - name: userId
+            label: 用户 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-USER-001
+            required: true
+            # 物理列 sys_user_post.user_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 post_id 组成联合主键
+          - name: postId
+            label: 岗位 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-POST-001
+            required: true
+            # 物理列 sys_user_post.post_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 user_id 组成联合主键
+
+    invariants:
+      - name: 登录账号唯一
+        expression: "COUNT(SysUser WHERE loginName == this.loginName AND userId != this.userId AND delFlag == '0') == 0"
+        violationMessage: 登录账号已存在，请更换账号
+        enforcedAt: ON_CREATE
+        # 证据：SysUserServiceImpl.checkLoginNameUnique + SysUserMapper.checkLoginNameUnique
+        # 触发时机：用户新增（SysUserController.addSave）、用户修改（editSave）、自助注册（SysRegisterService.register）
+      - name: 手机号码唯一
+        expression: "phonenumber == NULL OR phonenumber == '' OR COUNT(SysUser WHERE phonenumber == this.phonenumber AND userId != this.userId) == 0"
+        violationMessage: 手机号码已存在，请更换手机号
+        enforcedAt: ON_CREATE
+        # 证据：SysUserServiceImpl.checkPhoneUnique；控制器在 phonenumber 非空时才校验
+      - name: 邮箱唯一
+        expression: "email == NULL OR email == '' OR COUNT(SysUser WHERE email == this.email AND userId != this.userId) == 0"
+        violationMessage: 邮箱账号已存在，请更换邮箱
+        enforcedAt: ON_CREATE
+        # 证据：SysUserServiceImpl.checkEmailUnique
+      - name: 超级管理员账号受保护
+        expression: "userId != 1"
+        violationMessage: 不允许操作超级管理员用户
+        enforcedAt: ON_UPDATE
+        # 证据：SysUserServiceImpl.checkUserAllowed → user.isAdmin() 时抛 ServiceException("不允许操作超级管理员用户")
+        # 触发时机：用户状态修改（changeStatus）、密码重置等先调用 checkUserAllowed 的入口
+      - name: 当前登录用户不可自删
+        expression: "userId != CURRENT_ACTOR.userId"
+        violationMessage: 当前用户不能删除
+        enforcedAt: ON_DELETE
+        # 证据：SysUserController.remove 第 282-285 行：ids 含 getUserId() 时直接返回 error
+      - name: 密码与盐必须配套
+        expression: "(LENGTH(password) == 0 AND LENGTH(salt) == 0) OR (LENGTH(password) == 32 AND LENGTH(salt) > 0)"
+        violationMessage: 密码散列与盐必须同时存在
+        enforcedAt: ALWAYS
+        # 推断：SysPasswordService.matches 使用 user.getSalt() 参与散列，缺盐将导致任何口令都无法匹配
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 角色
+  # 域内能力：CAP-sys-perm-menu
+  # 聚合内子实体：角色-菜单关联、角色-部门数据范围关联（随角色级联删除）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-ROLE-001
+    name: 角色
+    alias: SysRole
+    aggregateType: AGGREGATE_ROOT
+    description: 权限集合单元，通过角色-菜单关联承载权限码授予，并通过数据范围（dataScope）与角色-部门关联限定可见数据；停用角色的权限不参与 Shiro 授权与数据范围计算
+    lifecycle: [正常, 停用, 已删除]
+    tags: [系统管理域, 核心域, 权限治理]
+
+    attributes:
+      - name: roleId
+        label: 角色 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_role.role_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: roleName
+        label: 角色名称
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_role.role_name ｜ VARCHAR(30) ｜ 非空 ｜ 无默认 ｜ 应用层 checkRoleNameUnique 校验
+      - name: roleKey
+        label: 角色权限字符
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_role.role_key ｜ VARCHAR(100) ｜ 非空 ｜ 无默认 ｜ 敏感凭据（Sensitivity=是（凭据类））
+        # 取值 admin / common；admin 触发 isAdmin() 超级管理员旁路
+        # 应用层 checkRoleKeyUnique 校验；Shiro Realm 以 roleKey 作为角色标识
+      - name: roleSort
+        label: 显示顺序
+        type: Integer
+        required: true
+        # 物理列 sys_role.role_sort ｜ INTEGER ｜ 非空 ｜ 无默认
+      - name: dataScope
+        label: 数据范围
+        type: Enum
+        defaultValue: "1"
+        enumValues: ["1", "2", "3", "4", "5"]
+        # 物理列 sys_role.data_scope ｜ CHAR(1) ｜ 可空 ｜ 默认 '1'
+        # DDL 注释只列 1全部 2自定 3本部门 4本部门及以下；DataScopeAspect 另有
+        # DATA_SCOPE_SELF="5"（仅本人），故本模型登记 5 个取值 ｜ # 推断：DDL 注释未同步第 5 个取值
+      - name: status
+        label: 角色状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_role.status ｜ CHAR(1) ｜ 非空 ｜ 无默认 ｜ 0正常 1停用
+        # 证据：SysLoginService.setRolePermission 只对 status=ROLE_NORMAL('0') 的角色加载权限码；
+        # DataScopeAspect 亦跳过 status=ROLE_DISABLE('1') 的角色
+      - name: delFlag
+        label: 删除标志
+        type: Enum
+        defaultValue: "0"
+        enumValues: ["0", "2"]
+        # 物理列 sys_role.del_flag ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0代表存在 2代表删除（DDL 注释原文）
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    entities:
+      - name: 角色菜单关联
+        alias: SysRoleMenu
+        description: 角色被授予的菜单/按钮节点集合，是权限码的实际授予载体；保存时整表先删后插
+        localId: roleId
+        cardinality: ZERO_OR_MORE
+        cascadeDelete: true
+        # 证据：SysRoleServiceImpl.insertRoleMenu / deleteRoleMenu；菜单删除前用该表判定「菜单已分配」
+        attributes:
+          - name: roleId
+            label: 角色 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-ROLE-001
+            required: true
+            # 物理列 sys_role_menu.role_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 menu_id 组成联合主键
+          - name: menuId
+            label: 菜单 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-MENU-001
+            required: true
+            # 物理列 sys_role_menu.menu_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 role_id 组成联合主键
+      - name: 角色部门数据范围关联
+        alias: SysRoleDept
+        description: 当角色数据范围为「自定数据权限」（dataScope='2'）时，逐条登记该角色可见的部门
+        localId: roleId
+        cardinality: ZERO_OR_MORE
+        cascadeDelete: true
+        # 证据：DataScopeAspect 生成 "dept_id IN (SELECT dept_id FROM sys_role_dept WHERE role_id in (...))"
+        attributes:
+          - name: roleId
+            label: 角色 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-ROLE-001
+            required: true
+            # 物理列 sys_role_dept.role_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 dept_id 组成联合主键
+          - name: deptId
+            label: 部门 ID
+            type: AggregateRootRef
+            targetAggregate: AGG-SYS-DEPT-001
+            required: true
+            # 物理列 sys_role_dept.dept_id ｜ BIGINT ｜ 非空 ｜ 无默认 ｜ 与 role_id 组成联合主键
+            # 种子数据：role 2 授权部门 100/101/105
+
+    invariants:
+      - name: 角色名称唯一
+        expression: "COUNT(SysRole WHERE roleName == this.roleName AND roleId != this.roleId AND delFlag == '0') == 0"
+        violationMessage: 角色名称已存在，请更换角色名称
+        enforcedAt: ON_CREATE
+        # 证据：SysRoleServiceImpl.checkRoleNameUnique
+      - name: 角色权限字符唯一
+        expression: "COUNT(SysRole WHERE roleKey == this.roleKey AND roleId != this.roleId AND delFlag == '0') == 0"
+        violationMessage: 角色权限字符已存在，请更换权限字符
+        enforcedAt: ON_CREATE
+        # 证据：SysRoleServiceImpl.checkRoleKeyUnique；触发时机：角色新增（SysRoleController.addSave）与修改（editSave）
+      - name: 超级管理员角色受保护
+        expression: "roleKey != 'admin'"
+        violationMessage: 不允许操作超级管理员角色
+        enforcedAt: ON_DELETE
+        # 证据：SysRoleServiceImpl 第 319 行抛 ServiceException("不允许操作超级管理员角色")（checkRoleAllowed）
+      - name: 已分配角色不可删除
+        expression: "COUNT(SysUserRole WHERE roleId == this.roleId) == 0"
+        violationMessage: 角色已分配，不能删除
+        enforcedAt: ON_DELETE
+        # 证据：SysRoleServiceImpl 第 165 行 String.format("%1$s已分配,不能删除", roleName)
+      - name: 自定数据范围必须有部门
+        expression: "dataScope != '2' OR COUNT(SysRoleDept WHERE roleId == this.roleId) > 0"
+        violationMessage: 数据范围选择「自定数据权限」时必须至少勾选一个部门
+        enforcedAt: ALWAYS
+        # 推断：DataScopeAspect 对 dataScope='2' 生成 dept_id IN (子查询)，sys_role_dept 为空时子查询无结果，
+        # 将导致该角色查询不到任何数据；DDL 与应用层均无此校验，故作为业务不变性显式登记
+      - name: 删除角色级联清理授权
+        expression: "DELETE(SysRole) IMPLIES COUNT(SysRoleMenu WHERE roleId == this.roleId) == 0 AND COUNT(SysRoleDept WHERE roleId == this.roleId) == 0"
+        violationMessage: 删除角色的同时必须清除其菜单授权与数据范围授权
+        enforcedAt: ON_DELETE
+        # 证据：SysRoleServiceImpl.deleteRoleByIds 事务内先删 sys_role_menu / sys_role_dept，再逻辑删除 sys_role
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 菜单
+  # 域内能力：CAP-sys-perm-menu
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-MENU-001
+    name: 菜单
+    alias: SysMenu
+    aggregateType: AGGREGATE_ROOT
+    description: 菜单与按钮权限树节点，是权限码（perms）的唯一载体；M 目录 / C 菜单 / F 按钮 三级结构，被角色勾选后其权限码参与 Shiro 授权判定
+    lifecycle: [显示, 隐藏]
+    tags: [系统管理域, 核心域, 权限治理]
+
+    attributes:
+      - name: menuId
+        label: 菜单 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_menu.menu_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认 ｜ 种子数据使用业务编号（1/100/1000/2100...）
+      - name: menuName
+        label: 菜单名称
+        type: String
+        required: true
+        # 物理列 sys_menu.menu_name ｜ VARCHAR(50) ｜ 非空 ｜ 无默认 ｜ 同级内唯一（checkMenuNameUnique(menuName, parentId)）
+      - name: parentId
+        label: 父菜单 ID
+        type: AggregateRootRef
+        targetAggregate: AGG-SYS-MENU-001
+        required: true
+        defaultValue: 0
+        # 物理列 sys_menu.parent_id ｜ BIGINT ｜ 可空 ｜ 默认 0 ｜ 自关联树，0 表示根节点
+      - name: orderNum
+        label: 显示顺序
+        type: Integer
+        defaultValue: 0
+        # 物理列 sys_menu.order_num ｜ INTEGER ｜ 可空 ｜ 默认 0
+      - name: url
+        label: 请求地址
+        type: String
+        defaultValue: "#"
+        # 物理列 sys_menu.url ｜ VARCHAR(200) ｜ 可空 ｜ 默认 '#' ｜ C 类为实际路由（如 /admin/open/app），M/F 类为 '#'
+      - name: target
+        label: 打开方式
+        type: Enum
+        defaultValue: ""
+        enumValues: ["", "menuItem", "menuBlank"]
+        # 物理列 sys_menu.target ｜ VARCHAR(20) ｜ 可空 ｜ 默认 ''
+        # DDL 注释「menuItem页签 menuBlank新窗口」；种子数据中仅 qvsu 官网菜单使用 menuBlank
+      - name: menuType
+        label: 菜单类型
+        type: Enum
+        required: true
+        enumValues: ["M", "C", "F"]
+        # 物理列 sys_menu.menu_type ｜ CHAR(1) ｜ 可空 ｜ 默认 ''
+        # M 目录 / C 菜单 / F 按钮（DDL 注释原文）；F 类为权限码载体，无路由
+      - name: visible
+        label: 菜单状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_SHOW_HIDE
+        # 物理列 sys_menu.visible ｜ CHAR(1) ｜ 可空 ｜ 默认 0 ｜ 0显示 1隐藏
+      - name: isRefresh
+        label: 是否刷新
+        type: Enum
+        defaultValue: "1"
+        enumValues: ["0", "1"]
+        # 物理列 sys_menu.is_refresh ｜ CHAR(1) ｜ 可空 ｜ 默认 1 ｜ DDL 注释「0刷新 1不刷新」
+      - name: perms
+        label: 权限标识
+        type: String
+        # 物理列 sys_menu.perms ｜ VARCHAR(100) ｜ 可空 ｜ 默认 null ｜ 权限码，格式 <域>:<资源>:<动作>
+        # 本系统实际使用域前缀：system / monitor / open（见 source-asset-inventory.md 第 6、7 节）
+      - name: icon
+        label: 菜单图标
+        type: String
+        defaultValue: "#"
+        # 物理列 sys_menu.icon ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '#'
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 同级菜单名称唯一
+        expression: "COUNT(SysMenu WHERE menuName == this.menuName AND parentId == this.parentId AND menuId != this.menuId) == 0"
+        violationMessage: 同级菜单下菜单名称已存在，请更换名称
+        enforcedAt: ON_CREATE
+        # 证据：SysMenuServiceImpl.checkMenuNameUnique 以 (menuName, parentId) 为键查询
+      - name: 存在子菜单不可删除
+        expression: "COUNT(SysMenu WHERE parentId == this.menuId) == 0"
+        violationMessage: 存在子菜单,不允许删除
+        enforcedAt: ON_DELETE
+        # 证据：SysMenuController 第 68 行 AjaxResult.warn("存在子菜单,不允许删除")
+      - name: 已分配菜单不可删除
+        expression: "COUNT(SysRoleMenu WHERE menuId == this.menuId) == 0"
+        violationMessage: 菜单已分配,不允许删除
+        enforcedAt: ON_DELETE
+        # 证据：SysMenuController 第 72 行 AjaxResult.warn("菜单已分配,不允许删除")
+      - name: 按钮节点必须携带权限码
+        expression: "menuType != 'F' OR (perms != NULL AND LENGTH(perms) > 0)"
+        violationMessage: 按钮类型的菜单必须填写权限标识
+        enforcedAt: ALWAYS
+        # 推断：F 类节点除权限码外无路由与图标，权限码为空则该节点对授权判定无任何作用；
+        # 种子数据中全部 F 类节点均带 perms，可佐证该约定
+      - name: 菜单节点必须携带路由
+        expression: "menuType != 'C' OR (url != NULL AND url != '#' AND LENGTH(url) > 0)"
+        violationMessage: 菜单类型的节点必须填写请求地址
+        enforcedAt: ALWAYS
+        # 推断：种子数据中全部 C 类节点 url 均为实际路由（/system/*、/monitor/job、/admin/open/*），
+        # 唯一例外 menu_id=4「qvsu官网」为外链 C 类节点 ｜ # 假设：外链菜单作为特例允许非应用内路由
+      - name: 根节点父 ID 为零
+        expression: "parentId == 0 OR COUNT(SysMenu WHERE menuId == this.parentId) == 1"
+        violationMessage: 父菜单不存在，请选择有效的上级菜单
+        enforcedAt: ALWAYS
+        # 推断：DDL 未声明外键，parentId 悬空将导致菜单树断裂、该节点及其子树不可见
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 部门
+  # 域内能力：CAP-sys-user-org、CAP-tenant-organization（数据范围层级基础）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-DEPT-001
+    name: 部门
+    alias: SysDept
+    aggregateType: AGGREGATE_ROOT
+    description: 组织机构树节点，通过 parentId 自关联并由 ancestors 冗余祖级路径；既是用户归属维度，也是角色数据范围（dataScope）与数据权限过滤的层级基础
+    lifecycle: [正常, 停用, 已删除]
+    tags: [系统管理域, 核心域, 组织]
+
+    attributes:
+      - name: deptId
+        label: 部门 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_dept.dept_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: parentId
+        label: 父部门 ID
+        type: AggregateRootRef
+        targetAggregate: AGG-SYS-DEPT-001
+        defaultValue: 0
+        # 物理列 sys_dept.parent_id ｜ BIGINT ｜ 可空 ｜ 默认 0 ｜ 自关联树，0 表示顶级
+      - name: ancestors
+        label: 祖级列表
+        type: String
+        # 物理列 sys_dept.ancestors ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 逗号分隔的祖先部门 ID 路径
+        # 种子数据示例：100 → '0'，101 → '0,100'，103 → '0,100,101'
+        # 数据范围 4（本部门及以下）依赖 find_in_set(deptId, ancestors) 进行子部门判定
+      - name: deptName
+        label: 部门名称
+        type: String
+        # 物理列 sys_dept.dept_name ｜ VARCHAR(30) ｜ 可空 ｜ 默认 '' ｜ 同级内唯一（checkDeptNameUnique(deptName, parentId)）
+      - name: orderNum
+        label: 显示顺序
+        type: Integer
+        defaultValue: 0
+        # 物理列 sys_dept.order_num ｜ INTEGER ｜ 可空 ｜ 默认 0
+      - name: leader
+        label: 负责人
+        type: String
+        # 物理列 sys_dept.leader ｜ VARCHAR(20) ｜ 可空 ｜ 默认 null ｜ 自由文本姓名，非用户 ID 引用 ｜ # 推断
+      - name: phone
+        label: 联系电话
+        type: String
+        # 物理列 sys_dept.phone ｜ VARCHAR(11) ｜ 可空 ｜ 默认 null
+      - name: email
+        label: 邮箱
+        type: String
+        # 物理列 sys_dept.email ｜ VARCHAR(50) ｜ 可空 ｜ 默认 null
+      - name: status
+        label: 部门状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_dept.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1停用
+        # 业务：父部门停用时不允许新增子节点（SysDeptServiceImpl 第 196-199 行）
+      - name: delFlag
+        label: 删除标志
+        type: Enum
+        defaultValue: "0"
+        enumValues: ["0", "2"]
+        # 物理列 sys_dept.del_flag ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0代表存在 2代表删除（DDL 注释原文）
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 同级部门名称唯一
+        expression: "COUNT(SysDept WHERE deptName == this.deptName AND parentId == this.parentId AND deptId != this.deptId AND delFlag == '0') == 0"
+        violationMessage: 同级部门下部门名称已存在，请更换名称
+        enforcedAt: ON_CREATE
+        # 证据：SysDeptServiceImpl.checkDeptNameUnique 以 (deptName, parentId) 为键查询
+      - name: 存在下级部门不可删除
+        expression: "COUNT(SysDept WHERE parentId == this.deptId AND delFlag == '0') == 0"
+        violationMessage: 存在下级部门,不允许删除
+        enforcedAt: ON_DELETE
+        # 证据：SysDeptController 第 141 行 AjaxResult.warn("存在下级部门,不允许删除")
+      - name: 部门存在用户不可删除
+        expression: "COUNT(SysUser WHERE deptId == this.deptId AND delFlag == '0') == 0"
+        violationMessage: 部门存在用户,不允许删除
+        enforcedAt: ON_DELETE
+        # 证据：SysDeptController 第 145 行 AjaxResult.warn("部门存在用户,不允许删除")
+      - name: 停用部门不可新增子节点
+        expression: "parentId == 0 OR PARENT(SysDept, parentId).status == '0'"
+        violationMessage: 部门停用，不允许新增
+        enforcedAt: ON_CREATE
+        # 证据：SysDeptServiceImpl 第 196-199 行：父节点 status 非 DEPT_NORMAL 时抛 ServiceException("部门停用，不允许新增")
+      - name: 祖级路径与父节点一致
+        expression: "parentId == 0 ? ancestors == '0' : ancestors == PARENT(SysDept, parentId).ancestors + ',' + parentId"
+        violationMessage: 祖级列表必须由父部门祖级列表与父部门 ID 拼接而成
+        enforcedAt: ALWAYS
+        # 推断：ancestors 为冗余路径列，若与 parentId 链不一致，数据范围 4（本部门及以下）将过滤出错误数据集；
+        # 种子数据逐条符合该公式，但代码中未发现独立校验
+      - name: 部门树不得成环
+        expression: "NOT CONTAINS(ancestors, this.deptId)"
+        violationMessage: 上级部门不能选择自身或自身的下级部门
+        enforcedAt: ON_UPDATE
+        # 推断：代码中 treeDataExcludeChild 在界面上排除了自身及子树，属界面级防环；
+        # 服务层未见显式校验，故作为不变性显式登记
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 岗位
+  # 域内能力：CAP-sys-user-org
+  # 聚合根判定：sys_post 有独立管理菜单（104/1020-1024）与独立生命周期，
+  #   与 sys_user 为多对多（sys_user_post 作为用户聚合子实体）→ 独立聚合根 ｜ # 推断
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-POST-001
+    name: 岗位
+    alias: SysPost
+    aggregateType: AGGREGATE_ROOT
+    description: 组织内的岗位定义，通过用户-岗位关联授予用户；已被用户引用的岗位不可删除
+    lifecycle: [正常, 停用]
+    tags: [系统管理域, 组织]
+
+    attributes:
+      - name: postId
+        label: 岗位 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_post.post_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: postCode
+        label: 岗位编码
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_post.post_code ｜ VARCHAR(64) ｜ 非空 ｜ 无默认 ｜ 应用层 checkPostCodeUnique 校验
+        # 种子数据：ceo / se / hr / user
+      - name: postName
+        label: 岗位名称
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_post.post_name ｜ VARCHAR(50) ｜ 非空 ｜ 无默认 ｜ 应用层 checkPostNameUnique 校验
+        # 种子数据：董事长 / 项目经理 / 人力资源 / 普通员工
+      - name: postSort
+        label: 显示顺序
+        type: Integer
+        required: true
+        # 物理列 sys_post.post_sort ｜ INTEGER ｜ 非空 ｜ 无默认
+      - name: status
+        label: 状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_post.status ｜ CHAR(1) ｜ 非空 ｜ 无默认 ｜ 0正常 1停用
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 岗位编码唯一
+        expression: "COUNT(SysPost WHERE postCode == this.postCode AND postId != this.postId) == 0"
+        violationMessage: 岗位编码已存在，请更换岗位编码
+        enforcedAt: ON_CREATE
+        # 证据：SysPostServiceImpl.checkPostCodeUnique
+      - name: 岗位名称唯一
+        expression: "COUNT(SysPost WHERE postName == this.postName AND postId != this.postId) == 0"
+        violationMessage: 岗位名称已存在，请更换岗位名称
+        enforcedAt: ON_CREATE
+        # 证据：SysPostServiceImpl.checkPostNameUnique
+      - name: 已分配岗位不可删除
+        expression: "COUNT(SysUserPost WHERE postId == this.postId) == 0"
+        violationMessage: 岗位已分配，不能删除
+        enforcedAt: ON_DELETE
+        # 证据：SysPostServiceImpl 第 104 行 String.format("%1$s已分配,不能删除", postName)
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 字典类型
+  # 域内能力：CAP-sys-dict-config、COMMON-dictionary-config
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-DICTTYPE-001
+    name: 字典类型
+    alias: SysDictType
+    aggregateType: AGGREGATE_ROOT
+    description: 引用数据的类型定义（如用户性别、菜单状态、任务状态），dictType 为业务稳定编码；被字典数据引用或存在字典数据时不可删除
+    lifecycle: [正常, 停用]
+    tags: [系统管理域, 引用数据]
+
+    attributes:
+      - name: dictId
+        label: 字典主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_dict_type.dict_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: dictName
+        label: 字典名称
+        type: String
+        # 物理列 sys_dict_type.dict_name ｜ VARCHAR(100) ｜ 可空 ｜ 默认 ''
+      - name: dictType
+        label: 字典类型编码
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_dict_type.dict_type ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ DDL 唯一约束 unique (dict_type)
+        # 本系统实际存在 10 个类型，见 data_dictionaries 的 DICT-SYS-DB 与 DICT-QUARTZ-DB
+      - name: status
+        label: 状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_dict_type.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1停用
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 字典类型编码唯一
+        expression: "COUNT(SysDictType WHERE dictType == this.dictType AND dictId != this.dictId) == 0"
+        violationMessage: 字典类型已存在，请更换字典类型
+        enforcedAt: ON_CREATE
+        # 证据：DDL unique (dict_type) + SysDictTypeServiceImpl.checkDictTypeUnique（双保险）
+      - name: 已被引用的字典类型不可删除
+        expression: "COUNT(SysDictData WHERE dictType == this.dictType) == 0"
+        violationMessage: 字典已分配，不能删除
+        enforcedAt: ON_DELETE
+        # 证据：SysDictTypeServiceImpl 第 131 行 String.format("%1$s已分配,不能删除", dictType.getDictName())
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 字典数据
+  # 域内能力：CAP-sys-dict-config
+  # 聚合根判定：sys_dict_data 有独立增删改菜单与权限码（1025-1029），
+  #   且无外键级联（仅以 dictType 字符串关联类型）→ 独立聚合根 ｜ # 推断
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-DICTDATA-001
+    name: 字典数据
+    alias: SysDictData
+    aggregateType: AGGREGATE_ROOT
+    description: 某个字典类型下的字典项，保存稳定存储值 dictValue 与界面显示标签 dictLabel；已使用项应停用而非删除
+    lifecycle: [正常, 停用]
+    tags: [系统管理域, 引用数据]
+
+    attributes:
+      - name: dictCode
+        label: 字典编码
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_dict_data.dict_code ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: dictSort
+        label: 字典排序
+        type: Integer
+        defaultValue: 0
+        # 物理列 sys_dict_data.dict_sort ｜ INTEGER ｜ 可空 ｜ 默认 0
+      - name: dictLabel
+        label: 字典标签
+        type: String
+        # 物理列 sys_dict_data.dict_label ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ 界面显示文本，可修改不影响已有数据
+      - name: dictValue
+        label: 字典键值
+        type: String
+        # 物理列 sys_dict_data.dict_value ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ 业务落库的稳定存储值
+      - name: dictType
+        label: 所属字典类型
+        type: String
+        # 物理列 sys_dict_data.dict_type ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ 关联 sys_dict_type.dict_type（业务键，非 ID 外键）
+      - name: cssClass
+        label: 样式属性
+        type: String
+        # 物理列 sys_dict_data.css_class ｜ VARCHAR(100) ｜ 可空 ｜ 默认 null ｜ DDL 注释「其他样式扩展」
+      - name: listClass
+        label: 表格回显样式
+        type: String
+        # 物理列 sys_dict_data.list_class ｜ VARCHAR(100) ｜ 可空 ｜ 默认 null
+        # 种子数据取值：primary / danger / warning / success / info
+      - name: isDefault
+        label: 是否默认
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_YES_NO
+        # 物理列 sys_dict_data.is_default ｜ CHAR(1) ｜ 可空 ｜ 默认 'N' ｜ Y是 N否
+      - name: status
+        label: 状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NORMAL_DISABLE
+        # 物理列 sys_dict_data.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1停用
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 字典项必须归属已存在的字典类型
+        expression: "COUNT(SysDictType WHERE dictType == this.dictType) == 1"
+        violationMessage: 所属字典类型不存在，请先维护字典类型
+        enforcedAt: ON_CREATE
+        # 推断：DDL 无外键；字典项脱离类型后将无法被 DictUtils 按 type 加载，成为孤儿数据
+      - name: 同类型内默认项至多一个
+        expression: "isDefault != 'Y' OR COUNT(SysDictData WHERE dictType == this.dictType AND isDefault == 'Y' AND dictCode != this.dictCode) == 0"
+        violationMessage: 同一字典类型下只能有一个默认字典项
+        enforcedAt: ALWAYS
+        # 推断：种子数据中每个字典类型恰有一个 is_default='Y'，界面按默认项回显；代码未见显式校验
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 参数配置
+  # 域内能力：CAP-sys-dict-config、COMMON-dictionary-config
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-CONFIG-001
+    name: 参数配置
+    alias: SysConfig
+    aggregateType: AGGREGATE_ROOT
+    description: 运行期可改的键值参数（如账号初始密码、密码字符范围、登录 IP 黑名单），configType='Y' 的内置参数不可删除
+    lifecycle: [启用, 内置锁定]
+    tags: [系统管理域, 配置]
+
+    attributes:
+      - name: configId
+        label: 参数主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_config.config_id ｜ INTEGER 自增主键 ｜ 非空 ｜ 无默认
+      - name: configName
+        label: 参数名称
+        type: String
+        # 物理列 sys_config.config_name ｜ VARCHAR(100) ｜ 可空 ｜ 默认 ''
+      - name: configKey
+        label: 参数键名
+        type: String
+        unique: true
+        # 物理列 sys_config.config_key ｜ VARCHAR(100) ｜ 可空 ｜ 默认 '' ｜ 敏感（Sensitivity=是（凭据类））
+        # 应用层 checkConfigKeyUnique 校验；种子数据共 11 个键（sys.index.skinName、sys.user.initPassword、
+        # sys.account.chrtype、sys.login.blackIPList 等）
+      - name: configValue
+        label: 参数键值
+        type: String
+        # 物理列 sys_config.config_value ｜ VARCHAR(500) ｜ 可空 ｜ 默认 ''
+      - name: configType
+        label: 系统内置
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_YES_NO
+        # 物理列 sys_config.config_type ｜ CHAR(1) ｜ 可空 ｜ 默认 'N' ｜ Y是（内置） N否
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 参数键名唯一
+        expression: "COUNT(SysConfig WHERE configKey == this.configKey AND configId != this.configId) == 0"
+        violationMessage: 参数键名已存在，请更换键名
+        enforcedAt: ON_CREATE
+        # 证据：SysConfigServiceImpl.checkConfigKeyUnique
+      - name: 内置参数不可删除
+        expression: "configType != 'Y'"
+        violationMessage: 内置参数不能删除
+        enforcedAt: ON_DELETE
+        # 证据：SysConfigServiceImpl 第 142 行 String.format("内置参数【%1$s】不能删除 ", configKey)
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-system 系统管理域 —— 通知公告
+  # 域内能力：CAP-sys-notice、COMMON-notice
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-NOTICE-001
+    name: 通知公告
+    alias: SysNotice
+    aggregateType: AGGREGATE_ROOT
+    description: 平台通知公告，分通知与公告两类，供后台首页展示；公告正文为富文本 HTML
+    lifecycle: [正常, 关闭]
+    tags: [系统管理域]
+
+    attributes:
+      - name: noticeId
+        label: 公告 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_notice.notice_id ｜ INTEGER 自增主键 ｜ 非空 ｜ 无默认
+      - name: noticeTitle
+        label: 公告标题
+        type: String
+        required: true
+        # 物理列 sys_notice.notice_title ｜ VARCHAR(50) ｜ 非空 ｜ 无默认
+      - name: noticeType
+        label: 公告类型
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NOTICE_TYPE
+        required: true
+        # 物理列 sys_notice.notice_type ｜ CHAR(1) ｜ 非空 ｜ 无默认 ｜ 1通知 2公告
+      - name: noticeContent
+        label: 公告内容
+        type: String
+        # 物理列 sys_notice.notice_content ｜ TEXT ｜ 可空 ｜ 默认 null ｜ 富文本 HTML
+        # 注意：XSS 过滤白名单将 /system/notice/* 显式排除（xss.excludes），以保留富文本标签
+      - name: status
+        label: 公告状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_NOTICE_STATUS
+        # 物理列 sys_notice.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1关闭
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 公告标题必填且长度受限
+        expression: "LENGTH(noticeTitle) > 0 AND LENGTH(noticeTitle) <= 50"
+        violationMessage: 公告标题不能为空且不超过 50 个字符
+        enforcedAt: ALWAYS
+        # 证据：DDL notice_title VARCHAR(50) NOT NULL
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-common 平台公共域 —— 操作审计日志
+  # 域内能力：CAP-operation-audit、COMMON-audit
+  # 聚合根判定：由 AOP 异步追加写入、只增不改、独立生命周期 → 独立聚合根
+  # 已知缺口：不存在 SysOperLogController，审计数据只写不读，无查询端点（business-architecture §7.4）
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-OPERLOG-001
+    name: 操作日志
+    alias: SysOperLog
+    aggregateType: AGGREGATE_ROOT
+    description: 被 @Log 注解标注的控制器方法经 LogAspect 环绕拦截后异步落库的操作审计记录，含操作人、请求参数、返回结果、耗时与状态
+    lifecycle: [已记录]
+    tags: [平台公共域, 审计, 只增不改]
+
+    attributes:
+      - name: operId
+        label: 日志主键
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_oper_log.oper_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: title
+        label: 模块标题
+        type: String
+        # 物理列 sys_oper_log.title ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 取自 @Log(title=...)
+        # 本系统取值示例：Open应用、Open接口、用户管理、定时任务
+      - name: businessType
+        label: 业务类型
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_OPER_TYPE
+        # 物理列 sys_oper_log.business_type ｜ INTEGER ｜ 可空 ｜ 默认 0 ｜ 0其它 1新增 2修改 3删除 4授权 5导出 6导入 7强退 9清空数据
+      - name: method
+        label: 方法名称
+        type: String
+        # 物理列 sys_oper_log.method ｜ VARCHAR(200) ｜ 可空 ｜ 默认 '' ｜ 目标方法全限定名
+      - name: requestMethod
+        label: 请求方式
+        type: String
+        # 物理列 sys_oper_log.request_method ｜ VARCHAR(10) ｜ 可空 ｜ 默认 ''
+      - name: operatorType
+        label: 操作类别
+        type: Enum
+        defaultValue: 0
+        enumValues: [0, 1, 2]
+        # 物理列 sys_oper_log.operator_type ｜ INTEGER ｜ 可空 ｜ 默认 0 ｜ 0其它 1后台用户 2手机端用户（DDL 注释原文）
+      - name: operName
+        label: 操作人员
+        type: String
+        # 物理列 sys_oper_log.oper_name ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: deptName
+        label: 部门名称
+        type: String
+        # 物理列 sys_oper_log.dept_name ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 部门名快照（冗余展示字段）
+      - name: operUrl
+        label: 请求 URL
+        type: String
+        # 物理列 sys_oper_log.oper_url ｜ VARCHAR(255) ｜ 可空 ｜ 默认 ''
+      - name: operIp
+        label: 主机地址
+        type: String
+        # 物理列 sys_oper_log.oper_ip ｜ VARCHAR(128) ｜ 可空 ｜ 默认 ''
+      - name: operLocation
+        label: 操作地点
+        type: String
+        # 物理列 sys_oper_log.oper_location ｜ VARCHAR(255) ｜ 可空 ｜ 默认 '' ｜ 由 IP 解析得到的地点文本
+      - name: operParam
+        label: 请求参数
+        type: String
+        # 物理列 sys_oper_log.oper_param ｜ VARCHAR(2000) ｜ 可空 ｜ 默认 ''
+      - name: jsonResult
+        label: 返回参数
+        type: String
+        # 物理列 sys_oper_log.json_result ｜ VARCHAR(2000) ｜ 可空 ｜ 默认 ''
+      - name: status
+        label: 操作状态
+        type: Enum
+        defaultValue: 0
+        enumValues: [0, 1]
+        # 物理列 sys_oper_log.status ｜ INTEGER ｜ 可空 ｜ 默认 0 ｜ 0正常 1异常（DDL 注释原文）
+      - name: errorMsg
+        label: 错误消息
+        type: String
+        # 物理列 sys_oper_log.error_msg ｜ VARCHAR(2000) ｜ 可空 ｜ 默认 ''
+      - name: operTime
+        label: 操作时间
+        type: DateTime
+        # 物理列 sys_oper_log.oper_time ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: costTime
+        label: 消耗时间
+        type: Integer
+        defaultValue: 0
+        # 物理列 sys_oper_log.cost_time ｜ BIGINT ｜ 可空 ｜ 默认 0 ｜ 单位毫秒 ｜ # 推断
+
+    invariants:
+      - name: 操作日志只增不改
+        expression: "UPDATE(SysOperLog) == 0"
+        violationMessage: 操作审计日志不允许修改
+        enforcedAt: ALWAYS
+        # 证据：COMMON-audit 仅提供 insertOperlog；全量扫描无更新/删除审计日志的 Mapper 方法
+      - name: 审计写入不阻断主流程
+        expression: "ALWAYS_TRUE"
+        violationMessage: 审计日志写入失败不影响业务结果
+        enforcedAt: ALWAYS
+        # 证据：LogAspect → AsyncManager 异步执行（AsyncFactory.recordOper），业务事务不感知审计失败
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-common 平台公共域 —— 登录日志
+  # 域内能力：CAP-operation-audit、COMMON-authentication
+  # 已知缺口：不存在 SysLogininforController，登录日志无查询端点
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-LOGININFOR-001
+    name: 登录日志
+    alias: SysLogininfor
+    aggregateType: AGGREGATE_ROOT
+    description: 登录成功与失败的审计记录，由 SysLoginService 与 SysPasswordService 通过 AsyncFactory.recordLogininfor 异步埋点写入
+    lifecycle: [成功, 失败]
+    tags: [平台公共域, 审计, 只增不改]
+
+    attributes:
+      - name: infoId
+        label: 访问 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_logininfor.info_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: loginName
+        label: 登录账号
+        type: String
+        # 物理列 sys_logininfor.login_name ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: ipaddr
+        label: 登录 IP 地址
+        type: String
+        # 物理列 sys_logininfor.ipaddr ｜ VARCHAR(128) ｜ 可空 ｜ 默认 ''
+      - name: loginLocation
+        label: 登录地点
+        type: String
+        # 物理列 sys_logininfor.login_location ｜ VARCHAR(255) ｜ 可空 ｜ 默认 ''
+      - name: browser
+        label: 浏览器类型
+        type: String
+        # 物理列 sys_logininfor.browser ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: os
+        label: 操作系统
+        type: String
+        # 物理列 sys_logininfor.os ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: status
+        label: 登录状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-SYS-DB
+          typeCode: SYS_COMMON_STATUS
+        # 物理列 sys_logininfor.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0成功 1失败
+      - name: msg
+        label: 提示消息
+        type: String
+        # 物理列 sys_logininfor.msg ｜ VARCHAR(255) ｜ 可空 ｜ 默认 '' ｜ 取自 i18n 键（user.login.success、user.blocked 等）
+      - name: loginTime
+        label: 访问时间
+        type: DateTime
+        # 物理列 sys_logininfor.login_time ｜ timestamp ｜ 可空 ｜ 无默认
+
+    invariants:
+      - name: 登录日志只增不改
+        expression: "UPDATE(SysLogininfor) == 0"
+        violationMessage: 登录审计日志不允许修改
+        enforcedAt: ALWAYS
+        # 证据：仅 AsyncFactory.recordLogininfor 一条写入路径；无更新端点
+      - name: 登录失败必留痕
+        expression: "ALWAYS_TRUE"
+        violationMessage: 登录失败必须记录登录日志
+        enforcedAt: ALWAYS
+        # 证据：SysLoginService.login 每个失败分支均调用 AsyncFactory.recordLogininfor(..., LOGIN_FAIL, ...)
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-common 平台公共域 —— 在线用户会话
+  # 域内能力：COMMON-session-online
+  # 聚合根判定：Shiro 会话持久化载体，独立生命周期，sessionId 为主键 → 独立聚合根
+  # 已知缺口：不存在 SysUserOnlineController；activeSessions 枚举不支持；maxSession=-1 时踢人逻辑不触发
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-USERONLINE-001
+    name: 在线用户会话
+    alias: SysUserOnline
+    aggregateType: AGGREGATE_ROOT
+    description: Shiro 会话持久化记录，由 OnlineSessionDAO 落库、SyncOnlineSessionFilter 同步，会话过期或强退后由定时校验清理
+    lifecycle: [在线, 离线, 已过期]
+    tags: [平台公共域, 会话]
+
+    attributes:
+      - name: sessionId
+        label: 用户会话 ID
+        type: String
+        required: true
+        unique: true
+        # 物理列 sys_user_online.sessionId ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ DDL 主键 primary key (sessionId)
+      - name: loginName
+        label: 登录账号
+        type: String
+        # 物理列 sys_user_online.login_name ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 与 sys_user.login_name 业务键关联
+      - name: deptName
+        label: 部门名称
+        type: String
+        # 物理列 sys_user_online.dept_name ｜ VARCHAR(50) ｜ 可空 ｜ 默认 '' ｜ 冗余展示字段
+      - name: ipaddr
+        label: 登录 IP 地址
+        type: String
+        # 物理列 sys_user_online.ipaddr ｜ VARCHAR(128) ｜ 可空 ｜ 默认 ''
+      - name: loginLocation
+        label: 登录地点
+        type: String
+        # 物理列 sys_user_online.login_location ｜ VARCHAR(255) ｜ 可空 ｜ 默认 ''
+      - name: browser
+        label: 浏览器类型
+        type: String
+        # 物理列 sys_user_online.browser ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: os
+        label: 操作系统
+        type: String
+        # 物理列 sys_user_online.os ｜ VARCHAR(50) ｜ 可空 ｜ 默认 ''
+      - name: status
+        label: 在线状态
+        type: Enum
+        enumValues: ["on_line", "off_line"]
+        # 物理列 sys_user_online.status ｜ VARCHAR(10) ｜ 可空 ｜ 默认 '' ｜ DDL 注释「在线状态on_line在线off_line离线」
+      - name: startTimestamp
+        label: 会话创建时间
+        type: DateTime
+        # 物理列 sys_user_online.start_timestamp ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: lastAccessTime
+        label: 最后访问时间
+        type: DateTime
+        # 物理列 sys_user_online.last_access_time ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: expireTime
+        label: 超时时间
+        type: Integer
+        defaultValue: 0
+        # 物理列 sys_user_online.expire_time ｜ INTEGER ｜ 可空 ｜ 默认 0 ｜ DDL 注释「超时时间，单位为分钟」
+
+    invariants:
+      - name: 会话 ID 唯一
+        expression: "COUNT(SysUserOnline WHERE sessionId == this.sessionId) <= 1"
+        violationMessage: 会话标识必须唯一
+        enforcedAt: ALWAYS
+        # 证据：DDL primary key (sessionId)
+      - name: 会话超时为正
+        expression: "expireTime >= 0"
+        violationMessage: 会话超时时间不能为负
+        enforcedAt: ALWAYS
+        # 推断：ShiroConfig 由 shiro.session.expireTime（当前 30 分钟）换算 globalSessionTimeout，
+        # 负数会使会话永不过期
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-quartz 调度任务域 —— 定时任务
+  # 域内能力：CAP-job-definition、CAP-job-execution、COMMON-scheduling
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-JOB-001
+    name: 定时任务
+    alias: SysJob
+    aggregateType: AGGREGATE_ROOT
+    description: Quartz 任务定义，支持 Bean 调用（invokeTarget）与 HTTP 调用（requestUrl）两种调度类型，由 cron 表达式驱动并记录执行日志
+    lifecycle: [正常, 暂停]
+    tags: [调度任务域, 核心域]
+
+    attributes:
+      - name: jobId
+        label: 任务 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_job.job_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认 ｜ AUTO_INCREMENT=100
+        # MySQL 方言变体主键为 (job_id, job_name, job_group) ｜ # 推断：PostgreSQL 方言变体仅 job_id 为主键
+      - name: jobName
+        label: 任务名称
+        type: String
+        # 物理列 sys_job.job_name ｜ VARCHAR(64) ｜ 可空 ｜ 默认 ''
+        # 种子数据：系统默认（无参）/ 系统默认（有参）/ 系统默认（多参）
+      - name: jobGroup
+        label: 任务组名
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-QUARTZ-DB
+          typeCode: SYS_JOB_GROUP
+        defaultValue: DEFAULT
+        # 物理列 sys_job.job_group ｜ VARCHAR(64) ｜ 可空 ｜ 默认 'DEFAULT' ｜ 字典取值 DEFAULT默认 / SYSTEM系统
+      - name: jobType
+        label: 调度类型
+        type: Enum
+        defaultValue: "1"
+        enumValues: ["1", "2"]
+        # 物理列 sys_job.job_type ｜ VARCHAR(1) ｜ 可空 ｜ 默认 '1' ｜ 1=Bean调用 2=HTTP调用（DDL 注释原文）
+        # jobType=1 校验 invokeTarget 白名单；jobType=2 校验 requestUrl 非空
+      - name: invokeTarget
+        label: 调用目标字符串
+        type: String
+        # 物理列 sys_job.invoke_target ｜ VARCHAR(1000) ｜ 可空 ｜ 默认 '' ｜ Bean 调用时使用
+        # 种子数据示例：qvsuTask.qvsuNoParams、qvsuTask.qvsuParams('qvsu')
+      - name: requestUrl
+        label: HTTP 请求 URL
+        type: String
+        # 物理列 sys_job.request_url ｜ VARCHAR(500) ｜ 可空 ｜ 默认 '' ｜ jobType=2 时使用且不允许为空
+      - name: requestMethod
+        label: HTTP 请求方法
+        type: Enum
+        defaultValue: GET
+        enumValues: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        # 物理列 sys_job.request_method ｜ VARCHAR(10) ｜ 可空 ｜ 默认 'GET'（DDL 注释给出上述取值域）
+      - name: requestHeaders
+        label: HTTP 请求头
+        type: String
+        # 物理列 sys_job.request_headers ｜ VARCHAR(1000) ｜ 可空 ｜ 默认 '' ｜ JSON 格式
+      - name: requestBody
+        label: HTTP 请求体
+        type: String
+        # 物理列 sys_job.request_body ｜ TEXT ｜ 可空 ｜ 无默认
+      - name: contentType
+        label: HTTP Content-Type
+        type: String
+        defaultValue: application/json
+        # 物理列 sys_job.content_type ｜ VARCHAR(100) ｜ 可空 ｜ 默认 'application/json'
+      - name: timeout
+        label: HTTP 超时时间
+        type: Integer
+        defaultValue: 5000
+        # 物理列 sys_job.timeout ｜ INTEGER ｜ 可空 ｜ 默认 5000 ｜ 单位毫秒，jobType=2 时使用
+        refRules:
+          - name: 超时必须为正
+            description: HTTP 调用超时为正整数毫秒
+            expression: "value == NULL OR value > 0"
+            violationMessage: HTTP 超时时间必须是大于 0 的毫秒数
+            enforcedAt: ALWAYS
+      - name: cronExpression
+        label: cron 执行表达式
+        type: String
+        # 物理列 sys_job.cron_expression ｜ VARCHAR(255) ｜ 可空 ｜ 默认 ''
+        # 种子数据：0/10 * * * * ?、0/15 * * * * ?、0/20 * * * * ?
+        refRules:
+          - name: cron 表达式合法性（格式）
+            description: cron 表达式必须为 6 段 Quartz 表达式且非空
+            expression: "LENGTH(value) > 0 AND SEGMENTS(value, ' ') == 6"
+            violationMessage: Cron 表达式不正确
+            enforcedAt: ALWAYS
+            # 真实校验由 CronUtils.isValid(Quartz CronExpression.isValidExpression) 完成，本表达式仅描述格式约束
+      - name: misfirePolicy
+        label: 计划执行错误策略
+        type: Enum
+        defaultValue: "3"
+        enumValues: ["1", "2", "3"]
+        # 物理列 sys_job.misfire_policy ｜ VARCHAR(20) ｜ 可空 ｜ 默认 '3' ｜ 1立即执行 2执行一次 3放弃执行（DDL 注释原文）
+      - name: concurrent
+        label: 是否并发执行
+        type: Enum
+        defaultValue: "1"
+        enumValues: ["0", "1"]
+        # 物理列 sys_job.concurrent ｜ CHAR(1) ｜ 可空 ｜ 默认 '1' ｜ 0允许 1禁止（DDL 注释原文）
+        # 0 使用 QuartzJobExecution，1 使用 QuartzDisallowConcurrentExecution
+      - name: status
+        label: 状态
+        type: DictionaryRef
+        dictionaryRef:
+          dictionaryId: DICT-QUARTZ-DB
+          typeCode: SYS_JOB_STATUS
+        defaultValue: "0"
+        # 物理列 sys_job.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1暂停
+      - name: auditInfo
+        label: 审计信息
+        type: ValueObject
+        valueObjectRef: 审计信息
+
+    invariants:
+      - name: 任务名称与组名唯一
+        expression: "COUNT(SysJob WHERE jobName == this.jobName AND jobGroup == this.jobGroup AND jobId != this.jobId) == 0"
+        violationMessage: 任务名称与任务组名组合已存在，请更换任务名称
+        enforcedAt: ON_CREATE
+        # 证据：MySQL 方言 DDL PRIMARY KEY (job_id, job_name, job_group) 将名称与组名纳入主键；
+        # SysJobServiceImpl.checkJobNameUnique/CronUtils 亦以 (jobName, jobGroup) 为查询条件 ｜ # 推断
+      - name: cron 表达式合法
+        expression: "CronUtils.isValid(cronExpression) == true"
+        violationMessage: 新增任务失败，Cron表达式不正确
+        enforcedAt: ALWAYS
+        # 证据：SysJobController 第 137-140 行（新增）与第 202 行（修改）均先校验 CronUtils.isValid
+      - name: Bean 调用目标必须在白名单内
+        expression: "jobType != '1' OR (LENGTH(invokeTarget) > 0 AND NOT CONTAINS_ANY(invokeTarget, ['rmi', 'ldap', 'ldaps', 'http', 'https']) AND ScheduleUtils.whiteList(invokeTarget))"
+        violationMessage: 目标字符串不允许 rmi/ldap(s)/http(s) 调用且必须在白名单内
+        enforcedAt: ALWAYS
+        # 证据：SysJobController 第 151-176 行逐项校验 invokeTarget
+      - name: HTTP 调用必须配置请求地址
+        expression: "jobType != '2' OR LENGTH(requestUrl) > 0"
+        violationMessage: 请求URL不能为空
+        enforcedAt: ALWAYS
+        # 证据：SysJobController 第 142-148 行
+      - name: 暂停任务不参与调度
+        expression: "status == '1' IMPLIES NOT SCHEDULED(this)"
+        violationMessage: 暂停状态的任务不应被调度执行
+        enforcedAt: ALWAYS
+        # 推断：ScheduleUtils.createScheduleJob 依据 status 决定是否创建/暂停触发器；
+        # 种子任务 status='1'（暂停）
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # DOM-quartz 调度任务域 —— 调度日志
+  # 域内能力：CAP-job-log、COMMON-scheduling
+  # 聚合根判定：由 AbstractQuartzJob.after 逐次追加写入，独立生命周期 → 独立聚合根
+  # ════════════════════════════════════════════════════════════════════════════
+  - id: AGG-SYS-JOBLOG-001
+    name: 调度日志
+    alias: SysJobLog
+    aggregateType: AGGREGATE_ROOT
+    description: 定时任务每次执行的日志记录，保存任务名与组名快照、调用目标、日志信息、执行状态与异常信息
+    lifecycle: [正常, 失败]
+    tags: [调度任务域, 审计, 只增不改]
+
+    attributes:
+      - name: jobLogId
+        label: 任务日志 ID
+        type: Integer
+        required: true
+        unique: true
+        # 物理列 sys_job_log.job_log_id ｜ BIGINT 自增主键 ｜ 非空 ｜ 无默认
+      - name: jobName
+        label: 任务名称
+        type: String
+        required: true
+        # 物理列 sys_job_log.job_name ｜ VARCHAR(64) ｜ 非空 ｜ 无默认 ｜ 任务名快照，非任务 ID 外键
+      - name: jobGroup
+        label: 任务组名
+        type: String
+        required: true
+        # 物理列 sys_job_log.job_group ｜ VARCHAR(64) ｜ 非空 ｜ 无默认 ｜ 组名快照
+      - name: invokeTarget
+        label: 调用目标字符串
+        type: String
+        required: true
+        # 物理列 sys_job_log.invoke_target ｜ VARCHAR(500) ｜ 非空 ｜ 无默认
+      - name: jobMessage
+        label: 日志信息
+        type: String
+        # 物理列 sys_job_log.job_message ｜ VARCHAR(500) ｜ 可空 ｜ 无默认
+      - name: status
+        label: 执行状态
+        type: Enum
+        defaultValue: "0"
+        enumValues: ["0", "1"]
+        # 物理列 sys_job_log.status ｜ CHAR(1) ｜ 可空 ｜ 默认 '0' ｜ 0正常 1失败（DDL 注释原文）
+      - name: exceptionInfo
+        label: 异常信息
+        type: String
+        # 物理列 sys_job_log.exception_info ｜ VARCHAR(2000) ｜ 可空 ｜ 默认 ''
+      - name: createTime
+        label: 创建时间
+        type: DateTime
+        # 物理列 sys_job_log.create_time ｜ timestamp ｜ 可空 ｜ 无默认
+
+    invariants:
+      - name: 调度日志只增不改
+        expression: "UPDATE(SysJobLog) == 0"
+        violationMessage: 调度日志不允许修改
+        enforcedAt: ALWAYS
+        # 证据：写入路径仅 AbstractQuartzJob.after → SysJobLogServiceImpl.addJobLog；其余为查询与清理
+      - name: 执行失败必须记录异常信息
+        expression: "status != '1' OR (exceptionInfo != NULL AND LENGTH(exceptionInfo) > 0)"
+        violationMessage: 执行失败的任务日志必须记录异常信息
+        enforcedAt: ALWAYS
+        # 推断：AbstractQuartzJob.after 捕获异常后同时写 status=1 与 exceptionInfo；缺一将无法定位失败原因
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 共享值对象目录（被多个聚合以 type: ValueObject + valueObjectRef 引用）
+#
+# 说明：规范中 valueObjectRef 必须能解析到值对象定义，而审计信息等值对象被 10 余个聚合共同使用，
+#      逐个聚合重复定义会产生大量冗余。故此处集中登记一次，语义与「聚合内 valueObjects」等价，
+#      键名沿用规范给出的 ValueObject 元素键名（name/alias/description/attributes/immutable/equalityFields）。
+# ══════════════════════════════════════════════════════════════════════════════
+value_objects:
+  - name: 审计信息
+    alias: AuditInfo
+    description: 系统管理域实体公共审计字段（对应源码 BaseEntity），由 create_by/create_time/update_by/update_time/remark 构成
+    attributes:
+      - name: createBy
+        label: 创建者
+        type: String
+        # 物理列 <表>.create_by ｜ VARCHAR(64) ｜ 可空 ｜ 默认 ''
+      - name: createTime
+        label: 创建时间
+        type: DateTime
+        # 物理列 <表>.create_time ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: updateBy
+        label: 更新者
+        type: String
+        # 物理列 <表>.update_by ｜ VARCHAR(64) ｜ 可空 ｜ 默认 ''
+      - name: updateTime
+        label: 更新时间
+        type: DateTime
+        # 物理列 <表>.update_time ｜ timestamp ｜ 可空 ｜ 无默认
+      - name: remark
+        label: 备注
+        type: String
+        # 物理列 <表>.remark ｜ VARCHAR(500) ｜ 可空 ｜ 默认 null ｜ 部分表为 VARCHAR(255)（sys_notice）
+    immutable: false
+    equalityFields: [createBy, createTime]
+    # 来源：docs/meta-model/domain-model.md OBJ-BaseEntity（value-object，7 字段含 searchValue/params 非持久化项）
+
+  - name: 开放平台审计信息
+    alias: OptAuditInfo
+    description: 开放平台五张表共有的审计与兼容列（对应源码 OptBaseEntity，14 字段中的持久化部分）
+    attributes:
+      - name: createTime
+        label: 创建时间
+        type: DateTime
+        # 物理列 <表>.create_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP
+      - name: updateTime
+        label: 更新时间
+        type: DateTime
+        # 物理列 <表>.update_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP
+      - name: sStatus
+        label: 兼容状态
+        type: Integer
+        defaultValue: 1
+        # 物理列 <表>.s_status ｜ smallint ｜ 可空 ｜ 默认 1 ｜ DDL 注释 "compat status"
+        # 与业务列 status 语义重复，代码中无写入点 ｜ # 待确认：兼容列来源与是否废弃无法从源码确认
+      - name: sIsDel
+        label: 兼容删除标志
+        type: Integer
+        defaultValue: 1
+        # 物理列 <表>.s_is_del ｜ smallint ｜ 可空 ｜ 默认 1 ｜ DDL 注释 "compat delete flag"
+        # # 假设：默认值为 1 而其名为 is_del，推断 1 表示"未删除"，与 sys_user.del_flag（0存在/2删除）约定相反；
+        #   代码中无读写点，删除均为物理 DELETE
+      - name: sCreatedTime
+        label: 兼容创建时间
+        type: DateTime
+        # 物理列 <表>.s_created_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP
+        # 注意：OpenManageService 的查询语句将 create_time 以别名 s_created_time 回填给实体，二者语义重叠
+      - name: sUpdatedTime
+        label: 兼容更新时间
+        type: DateTime
+        # 物理列 <表>.s_updated_time ｜ timestamp ｜ 可空 ｜ 默认 CURRENT_TIMESTAMP
+    immutable: false
+    equalityFields: [createTime, sCreatedTime]
+    # 来源：docs/meta-model/domain-model.md OBJ-OptBaseEntity（value-object，14 字段）
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 数据字典
+#
+# 来源分两类（与属性书写约定第 4 条一致）：
+#   - 库表字典：DICT-SYS-DB、DICT-QUARTZ-DB —— 逐条来自 sys_dict_type / sys_dict_data 种子数据；
+#   - 代码枚举：DICT-MENU-CODE、DICT-IDENTITY-CODE、DICT-OPEN-CODE、DICT-AUDIT-CODE、DICT-QUARTZ-CODE
+#     —— 值域来自源码常量、DDL COMMENT 或 Service 分支，库中无字典行，故属性侧使用 Enum + enumValues，
+#     此处仅作统一登记，便于与界面下拉框取值对账。
+# ══════════════════════════════════════════════════════════════════════════════
+data_dictionaries:
+
+  - id: DICT-SYS-DB
+    name: 系统内置字典
+    # 证据：open-api/deploy/local-docker/postgres/init/10-qvsu.sql 第 384-391 行（8 个 sys_dict_type）
+    #       与第 417-440 行（对应 sys_dict_data 共 28 条）
+    types:
+      - typeCode: SYS_USER_SEX
+        typeName: 用户性别
+        description: sys_dict_type dict_id=1，dict_type='sys_user_sex'
+        items:
+          - code: "0"
+            label: 男
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 女
+            enabled: true
+            sortOrder: 2
+          - code: "2"
+            label: 未知
+            enabled: true
+            sortOrder: 3
+      - typeCode: SYS_SHOW_HIDE
+        typeName: 菜单状态
+        description: sys_dict_type dict_id=2，dict_type='sys_show_hide'
+        items:
+          - code: "0"
+            label: 显示
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 隐藏
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_NORMAL_DISABLE
+        typeName: 系统开关
+        description: sys_dict_type dict_id=3，dict_type='sys_normal_disable'；被用户/角色/部门/岗位/字典类型/字典数据的状态列共用
+        items:
+          - code: "0"
+            label: 正常
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 停用
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_YES_NO
+        typeName: 系统是否
+        description: sys_dict_type dict_id=6，dict_type='sys_yes_no'
+        items:
+          - code: "Y"
+            label: 是
+            enabled: true
+            sortOrder: 1
+          - code: "N"
+            label: 否
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_NOTICE_TYPE
+        typeName: 通知类型
+        description: sys_dict_type dict_id=7，dict_type='sys_notice_type'
+        items:
+          - code: "1"
+            label: 通知
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: 公告
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_NOTICE_STATUS
+        typeName: 通知状态
+        description: sys_dict_type dict_id=8，dict_type='sys_notice_status'
+        items:
+          - code: "0"
+            label: 正常
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 关闭
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_OPER_TYPE
+        typeName: 操作类型
+        description: sys_dict_type dict_id=9，dict_type='sys_oper_type'；用于 sys_oper_log.business_type
+        items:
+          - code: "0"
+            label: 其他
+            enabled: true
+            sortOrder: 99
+          - code: "1"
+            label: 新增
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: 修改
+            enabled: true
+            sortOrder: 2
+          - code: "3"
+            label: 删除
+            enabled: true
+            sortOrder: 3
+          - code: "4"
+            label: 授权
+            enabled: true
+            sortOrder: 4
+          - code: "5"
+            label: 导出
+            enabled: true
+            sortOrder: 5
+          - code: "6"
+            label: 导入
+            enabled: true
+            sortOrder: 6
+          - code: "7"
+            label: 强退
+            enabled: true
+            sortOrder: 7
+          - code: "9"
+            label: 清空数据
+            enabled: true
+            sortOrder: 9
+      - typeCode: SYS_COMMON_STATUS
+        typeName: 系统状态
+        description: sys_dict_type dict_id=10，dict_type='sys_common_status'；用于 sys_logininfor.status
+        items:
+          - code: "0"
+            label: 成功
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 失败
+            enabled: true
+            sortOrder: 2
+
+  - id: DICT-QUARTZ-DB
+    name: 调度域字典
+    # 证据：open-api/sql/quartz.sql 第 165-187 行（sys_dict_type dict_id=4/5 与对应 sys_dict_data）
+    types:
+      - typeCode: SYS_JOB_STATUS
+        typeName: 任务状态
+        description: sys_dict_type dict_id=4，dict_type='sys_job_status'
+        items:
+          - code: "0"
+            label: 正常
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 暂停
+            enabled: true
+            sortOrder: 2
+      - typeCode: SYS_JOB_GROUP
+        typeName: 任务分组
+        description: sys_dict_type dict_id=5，dict_type='sys_job_group'
+        items:
+          - code: DEFAULT
+            label: 默认
+            enabled: true
+            sortOrder: 1
+          - code: SYSTEM
+            label: 系统
+            enabled: true
+            sortOrder: 2
+
+  - id: DICT-MENU-CODE
+    name: 菜单代码枚举
+    types:
+      - typeCode: MENU_TYPE
+        typeName: 菜单类型
+        description: sys_menu.menu_type，M目录 C菜单 F按钮
+        items:
+          - code: M
+            label: 目录
+            enabled: true
+            sortOrder: 1
+          - code: C
+            label: 菜单
+            enabled: true
+            sortOrder: 2
+          - code: F
+            label: 按钮
+            enabled: true
+            sortOrder: 3
+      - typeCode: MENU_TARGET
+        typeName: 菜单打开方式
+        description: sys_menu.target；种子数据仅 qvsu 官网菜单使用 menuBlank
+        items:
+          - code: menuItem
+            label: 页签
+            enabled: true
+            sortOrder: 1
+          - code: menuBlank
+            label: 新窗口
+            enabled: true
+            sortOrder: 2
+      - typeCode: MENU_REFRESH
+        typeName: 菜单是否刷新
+        description: sys_menu.is_refresh
+        items:
+          - code: "0"
+            label: 刷新
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 不刷新
+            enabled: true
+            sortOrder: 2
+
+  - id: DICT-IDENTITY-CODE
+    name: 身份、删除与数据范围代码枚举
+    types:
+      - typeCode: DEL_FLAG
+        typeName: 删除标志
+        description: sys_user/sys_role/sys_dept.del_flag，0代表存在 2代表删除（DDL COMMENT 原文）
+        items:
+          - code: "0"
+            label: 存在
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: 删除
+            enabled: true
+            sortOrder: 2
+      - typeCode: USER_TYPE
+        typeName: 用户类型
+        description: sys_user.user_type，00系统用户 01注册用户
+        items:
+          - code: "00"
+            label: 系统用户
+            enabled: true
+            sortOrder: 1
+          - code: "01"
+            label: 注册用户
+            enabled: true
+            sortOrder: 2
+      - typeCode: DATA_SCOPE
+        typeName: 数据范围
+        description: sys_role.data_scope；1/2/3/4 见 DDL COMMENT，5 见 DataScopeAspect.DATA_SCOPE_SELF
+        items:
+          - code: "1"
+            label: 全部数据权限
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: 自定数据权限
+            enabled: true
+            sortOrder: 2
+          - code: "3"
+            label: 本部门数据权限
+            enabled: true
+            sortOrder: 3
+          - code: "4"
+            label: 本部门及以下数据权限
+            enabled: true
+            sortOrder: 4
+          - code: "5"
+            label: 仅本人数据权限
+            enabled: true
+            sortOrder: 5
+
+  - id: DICT-OPEN-CODE
+    name: 开放平台代码枚举
+    types:
+      - typeCode: OPEN_ENTITY_STATUS
+        typeName: 开放平台实体状态
+        description: open_app.status 与 open_api.status，1=enabled 0=disabled（DDL COMMENT 原文）
+        items:
+          - code: "1"
+            label: 启用
+            enabled: true
+            sortOrder: 1
+          - code: "0"
+            label: 停用
+            enabled: true
+            sortOrder: 2
+      - typeCode: NEED_SIGN
+        typeName: 是否需要签名
+        description: open_api.need_sign，1=sign required（DDL COMMENT 原文）；0 时网关跳过全部鉴权
+        items:
+          - code: "1"
+            label: 需要签名
+            enabled: true
+            sortOrder: 1
+          - code: "0"
+            label: 免签名
+            enabled: true
+            sortOrder: 2
+      - typeCode: CALL_LOG_STATUS
+        typeName: 调用结果状态
+        description: open_call_log.status，0=ok 1=auth-fail 2=proxy-fail（DDL COMMENT 原文）
+        items:
+          - code: "0"
+            label: 成功
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 鉴权失败
+            enabled: true
+            sortOrder: 2
+          - code: "2"
+            label: 转发或系统异常
+            enabled: true
+            sortOrder: 3
+      - typeCode: HTTP_METHOD
+        typeName: HTTP 请求方法
+        description: open_api.method 与 sys_job.request_method
+        items:
+          - code: GET
+            label: GET
+            enabled: true
+            sortOrder: 1
+          - code: POST
+            label: POST
+            enabled: true
+            sortOrder: 2
+          - code: PUT
+            label: PUT
+            enabled: true
+            sortOrder: 3
+          - code: DELETE
+            label: DELETE
+            enabled: true
+            sortOrder: 4
+          - code: PATCH
+            label: PATCH
+            enabled: true
+            sortOrder: 5
+      - typeCode: OPEN_RESULT_CODE
+        typeName: 开放平台网关业务码
+        description: OpenResult.code；网关一律以 HTTP 200 返回，失败码由 OpenApiSecurityException 与 OpenProxyException 抛出
+        items:
+          - code: "0"
+            label: 成功
+            enabled: true
+            sortOrder: 0
+          - code: "40001"
+            label: 缺少认证头或应用无效
+            enabled: true
+            sortOrder: 40001
+          - code: "40002"
+            label: 时间戳过期或格式非法
+            enabled: true
+            sortOrder: 40002
+          - code: "40003"
+            label: 签名验证失败
+            enabled: true
+            sortOrder: 40003
+          - code: "40004"
+            label: 接口未暴露、已禁用或未授权
+            enabled: true
+            sortOrder: 40004
+          - code: "40005"
+            label: Nonce 已被使用
+            enabled: true
+            sortOrder: 40005
+          - code: "50001"
+            label: 不支持的请求方法或后端服务调用失败
+            enabled: true
+            sortOrder: 50001
+          - code: "50002"
+            label: 请求超时
+            enabled: true
+            sortOrder: 50002
+        # 证据：OpenApiSecurityService（40001-40005、50001）、OpenApiProxyService（50001、50002）、OpenGatewayController（50001）
+
+  - id: DICT-AUDIT-CODE
+    name: 审计与会话代码枚举
+    types:
+      - typeCode: LOGIN_STATUS
+        typeName: 登录状态
+        description: sys_logininfor.status 的代码写法（本系统实际由 SYS_COMMON_STATUS 字典承载）
+        items:
+          - code: "0"
+            label: 成功
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 失败
+            enabled: true
+            sortOrder: 2
+      - typeCode: ONLINE_STATUS
+        typeName: 在线状态
+        description: sys_user_online.status，on_line在线 off_line离线（DDL COMMENT 原文）
+        items:
+          - code: on_line
+            label: 在线
+            enabled: true
+            sortOrder: 1
+          - code: off_line
+            label: 离线
+            enabled: true
+            sortOrder: 2
+      - typeCode: OPERATOR_TYPE
+        typeName: 操作类别
+        description: sys_oper_log.operator_type，0其它 1后台用户 2手机端用户
+        items:
+          - code: "0"
+            label: 其它
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 后台用户
+            enabled: true
+            sortOrder: 2
+          - code: "2"
+            label: 手机端用户
+            enabled: true
+            sortOrder: 3
+      - typeCode: OPER_STATUS
+        typeName: 操作状态
+        description: sys_oper_log.status，0正常 1异常
+        items:
+          - code: "0"
+            label: 正常
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 异常
+            enabled: true
+            sortOrder: 2
+
+  - id: DICT-QUARTZ-CODE
+    name: 调度代码枚举
+    types:
+      - typeCode: JOB_TYPE
+        typeName: 调度类型
+        description: sys_job.job_type，1=Bean调用 2=HTTP调用
+        items:
+          - code: "1"
+            label: Bean 调用
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: HTTP 调用
+            enabled: true
+            sortOrder: 2
+      - typeCode: MISFIRE_POLICY
+        typeName: 计划执行错误策略
+        description: sys_job.misfire_policy，1立即执行 2执行一次 3放弃执行
+        items:
+          - code: "1"
+            label: 立即执行
+            enabled: true
+            sortOrder: 1
+          - code: "2"
+            label: 执行一次
+            enabled: true
+            sortOrder: 2
+          - code: "3"
+            label: 放弃执行
+            enabled: true
+            sortOrder: 3
+      - typeCode: JOB_CONCURRENT
+        typeName: 是否并发执行
+        description: sys_job.concurrent，0允许 1禁止
+        items:
+          - code: "0"
+            label: 允许并发
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 禁止并发
+            enabled: true
+            sortOrder: 2
+      - typeCode: JOB_LOG_STATUS
+        typeName: 调度执行状态
+        description: sys_job_log.status，0正常 1失败
+        items:
+          - code: "0"
+            label: 正常
+            enabled: true
+            sortOrder: 1
+          - code: "1"
+            label: 失败
+            enabled: true
+            sortOrder: 2
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 聚合间关联（聚合之间一律通过 ID 引用，不建立对象引用）
+# 凡 referenceField 为业务键（app_key / api_path / dictType / jobName / loginName / operName）者，
+# 表示物理表未保存目标聚合主键，仅为快照或业务键关联，引用完整性由应用层维护 → 均标注 # 推断
+# ══════════════════════════════════════════════════════════════════════════════
+aggregate_associations:
+
+  # ── 组织与授权（系统管理域） ────────────────────────────────────────────────
+  - id: ASSOC-USER-DEPT
+    sourceAggregate: AGG-SYS-USER-001
+    targetAggregate: AGG-SYS-DEPT-001
+    associationType: REFERENCE
+    sourceRole: 所属部门
+    targetRole: 部门用户
+    cardinality: MANY_TO_ONE
+    referenceField: deptId
+    # 证据：sys_user.dept_id；用户新增/修改可变更部门，部门删除前置校验「部门存在用户」
+
+  - id: ASSOC-USER-ROLE
+    sourceAggregate: AGG-SYS-USER-001
+    targetAggregate: AGG-SYS-ROLE-001
+    associationType: REFERENCE
+    sourceRole: 授予角色
+    targetRole: 角色用户
+    cardinality: MANY_TO_MANY
+    referenceField: roleId
+    # 证据：sys_user_role（用户聚合子实体）；insertAuthRole 整表先删后插，并刷新 Shiro 授权缓存
+
+  - id: ASSOC-USER-POST
+    sourceAggregate: AGG-SYS-USER-001
+    targetAggregate: AGG-SYS-POST-001
+    associationType: REFERENCE
+    sourceRole: 任职岗位
+    targetRole: 岗位用户
+    cardinality: MANY_TO_MANY
+    referenceField: postId
+    # 证据：sys_user_post（用户聚合子实体）；岗位删除前校验「已分配,不能删除」
+
+  - id: ASSOC-ROLE-MENU
+    sourceAggregate: AGG-SYS-ROLE-001
+    targetAggregate: AGG-SYS-MENU-001
+    associationType: REFERENCE
+    sourceRole: 授予菜单
+    targetRole: 菜单授权角色
+    cardinality: MANY_TO_MANY
+    referenceField: menuId
+    # 证据：sys_role_menu（角色聚合子实体）；该关联是权限码的实际授予载体，
+    # Shiro 经 selectPermsByRoleId 由此推导角色权限集合
+
+  - id: ASSOC-ROLE-DEPT
+    sourceAggregate: AGG-SYS-ROLE-001
+    targetAggregate: AGG-SYS-DEPT-001
+    associationType: REFERENCE
+    sourceRole: 数据范围部门
+    targetRole: 部门数据范围角色
+    cardinality: MANY_TO_MANY
+    referenceField: deptId
+    # 证据：sys_role_dept（角色聚合子实体）；仅当 dataScope='2'（自定数据权限）时参与过滤
+    # 待确认：common-capability-index 记载 roleDeptTreeData 只读该表，未给出写入点
+
+  - id: ASSOC-DEPT-TREE
+    sourceAggregate: AGG-SYS-DEPT-001
+    targetAggregate: AGG-SYS-DEPT-001
+    associationType: REFERENCE
+    sourceRole: 上级部门
+    targetRole: 下级部门
+    cardinality: ONE_TO_MANY
+    referenceField: parentId
+    # 证据：sys_dept.parent_id 自关联，0 为顶级；ancestors 冗余祖级路径配合 use
+
+  - id: ASSOC-MENU-TREE
+    sourceAggregate: AGG-SYS-MENU-001
+    targetAggregate: AGG-SYS-MENU-001
+    associationType: REFERENCE
+    sourceRole: 上级菜单
+    targetRole: 下级菜单
+    cardinality: ONE_TO_MANY
+    referenceField: parentId
+    # 证据：sys_menu.parent_id 自关联，0 为根；M→C→F 三级结构
+
+  - id: ASSOC-DICTDATA-DICTTYPE
+    sourceAggregate: AGG-SYS-DICTDATA-001
+    targetAggregate: AGG-SYS-DICTTYPE-001
+    associationType: DEPENDENCY
+    sourceRole: 所属字典类型
+    targetRole: 字典项
+    cardinality: MANY_TO_ONE
+    referenceField: dictType
+    # 证据：sys_dict_data.dict_type 保存的是 dict_type 编码（业务键）而非 dict_id ｜ # 推断
+    # 依赖语义：字典项脱离字典类型后无法被 DictUtils 加载；删除字典类型前校验其是否已有字典项
+
+  - id: ASSOC-JOB-JOBLOG
+    sourceAggregate: AGG-SYS-JOB-001
+    targetAggregate: AGG-SYS-JOBLOG-001
+    associationType: REFERENCE
+    sourceRole: 产生调度日志
+    targetRole: 所属任务
+    cardinality: ONE_TO_MANY
+    referenceField: jobName
+    # 证据：sys_job_log.job_name / job_group 为任务名与组名快照，未保存 job_id ｜ # 推断
+    # 任务改名后历史日志与新任务定义将无法关联
+
+  - id: ASSOC-USERONLINE-USER
+    sourceAggregate: AGG-SYS-USERONLINE-001
+    targetAggregate: AGG-SYS-USER-001
+    associationType: REFERENCE
+    sourceRole: 会话归属用户
+    targetRole: 用户在线会话
+    cardinality: MANY_TO_ONE
+    referenceField: loginName
+    # 证据：sys_user_online.login_name 为登录账号快照，未保存 user_id ｜ # 推断
+
+  - id: ASSOC-OPERLOG-USER
+    sourceAggregate: AGG-SYS-OPERLOG-001
+    targetAggregate: AGG-SYS-USER-001
+    associationType: REFERENCE
+    sourceRole: 操作人
+    targetRole: 用户操作记录
+    cardinality: MANY_TO_ONE
+    referenceField: operName
+    # 证据：sys_oper_log.oper_name 为操作人登录名快照；同表 dept_name 为用户部门名快照 ｜ # 推断
+
+  - id: ASSOC-LOGININFOR-USER
+    sourceAggregate: AGG-SYS-LOGININFOR-001
+    targetAggregate: AGG-SYS-USER-001
+    associationType: REFERENCE
+    sourceRole: 登录账号
+    targetRole: 用户登录记录
+    cardinality: MANY_TO_ONE
+    referenceField: loginName
+    # 证据：sys_logininfor.login_name 为登录账号快照；用户不存在的失败登录同样落库，
+    # 故此关联为弱引用（可指向不存在的用户）｜ # 推断
+
+  # ── 开放平台域 ──────────────────────────────────────────────────────────────
+  - id: ASSOC-APP-API-AUTH
+    sourceAggregate: AGG-OPEN-APP-001
+    targetAggregate: AGG-OPEN-API-001
+    associationType: REFERENCE
+    sourceRole: 被授权接口
+    targetRole: 授权应用
+    cardinality: MANY_TO_MANY
+    referenceField: apiId
+    # 证据：open_app_api（应用聚合子实体），UNIQUE(app_id, api_id)
+    # 该关联是网关运行期「应用是否有权访问该接口」的唯一判定依据（OpenApiSecurityService.hasPermission）
+    # 维护方式：saveAppAuth 先 delete 该应用全部授权再 batchInsert（覆盖式保存，天然去重幂等）
+
+  - id: ASSOC-DOC-APP
+    sourceAggregate: AGG-OPEN-DOC-001
+    targetAggregate: AGG-OPEN-APP-001
+    associationType: REFERENCE
+    sourceRole: 文档归属应用
+    targetRole: 应用接口文档
+    cardinality: MANY_TO_ONE
+    referenceField: appId
+    # 证据：open_api_doc.app_id（可空）；database-schema 记为「PK/候选键（推断）」
+
+  - id: ASSOC-DOC-API
+    sourceAggregate: AGG-OPEN-DOC-001
+    targetAggregate: AGG-OPEN-API-001
+    associationType: REFERENCE
+    sourceRole: 文档包含接口
+    targetRole: 接口所属文档
+    cardinality: MANY_TO_MANY
+    referenceField: apiIds
+    # 证据：open_api_doc.api_ids 为逗号分隔的 open_api.s_id 快照（VARCHAR(500)）
+    # 无关联表与外键，接口删除后文档保留快照，属有意的版本快照语义 ｜ # 推断
+
+  - id: ASSOC-CALLLOG-APP
+    sourceAggregate: AGG-OPEN-CALLLOG-001
+    targetAggregate: AGG-OPEN-APP-001
+    associationType: REFERENCE
+    sourceRole: 调用方应用
+    targetRole: 应用调用日志
+    cardinality: MANY_TO_ONE
+    referenceField: appKey
+    # 证据：open_call_log.app_key / app_name 为快照；鉴权失败时 app_key 可能非法或不存在的值 ｜ # 推断
+    # 业务影响：按 app_key 分组统计时无法关联到应用主数据，只能依赖快照文本
+
+  - id: ASSOC-CALLLOG-API
+    sourceAggregate: AGG-OPEN-CALLLOG-001
+    targetAggregate: AGG-OPEN-API-001
+    associationType: REFERENCE
+    sourceRole: 被调用接口
+    targetRole: 接口调用日志
+    cardinality: MANY_TO_ONE
+    referenceField: apiPath
+    # 证据：open_call_log.api_path 为对外路径快照，未保存 open_api.s_id ｜ # 推断
+    # 业务影响：接口路径修改后历史日志无法关联到接口定义

@@ -1,0 +1,2 @@
+CREATE DATABASE IF NOT EXISTS jd_openapi DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE jd_openapi;

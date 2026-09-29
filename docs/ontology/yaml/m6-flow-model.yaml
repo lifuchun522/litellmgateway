@@ -1,0 +1,943 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# M6 流程模型元文件 - m6-flow-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务 · Spring Boot + MyBatis + Shiro + PostgreSQL）
+# 建模方式：基于已通过校验的逆向元模型（docs/meta-model/，25 份）正向表达，不新增业务、不虚构审批
+# 主要素材：flow-index.md（10 条端到端流程）、function-chain-index.md、functional-inventory.md、
+#           domain-model.md、database-schema.md、common-capability-index.md
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一、流程模型在本系统中的适用性说明（先检索、后结论）
+# ══════════════════════════════════════════════════════════════════════════════
+# 结论 1：本系统【不存在任何审批流（APPROVAL）定义】，M6 的审批流部分在本系统中"不适用（未实现）"。
+#   证据（均为本次实际执行的检索，可复现）：
+#   ① 源码检索：在 open-api/ 全目录执行正则检索
+#      "(?i)activiti|flowable|camunda|process_?instance|taskquery|workflow|工作流|审批|approve|node_graph|sys_flow|bpmn"
+#      → No matches found（零命中）。
+#      第一次检索 "Activiti|Flowable|Camunda|ProcessInstance|TaskQuery|node_graph|FlowService|工作流|审批" 同样零命中。
+#   ② 元模型结论：docs/meta-model/common-capability-index.md:1197「技能默认族 workflow（工作流）项 →
+#      不适用（未实现）」，其依据为：全量扫描 com/qvsu/** 无 Activiti/Flowable/Camunda/ProcessInstance/TaskQuery 符号；
+#      open-api/sql/*.sql 与 deploy/local-docker/*/init/*.sql 无流程定义/实例/任务/历史表 DDL；
+#      docs/tools/menus.json 的 149 行菜单中无审批类条目。
+#   ③ 物理表证据：database-schema.md 的 34 张表（open_* 5 张、sys_* 18 张、QRTZ_* 11 张）中
+#      不存在任何流程/任务/审批/历史类业务表（无 *_flow_*、*_process_*、*_approval*、*_task* 业务表）。
+#   ④ 功能证据：functional-inventory.md 的 32 个功能中没有"提交审批/审批通过/驳回/退回/会签/撤回"类功能；
+#      flow-index.md 的 10 条端到端流程均为同步协同链，无审批节点与审批角色。
+#   因此本文件不定义任何 flowType: APPROVAL 流程，也不虚构审批角色、approvalOutcomes 或审批网关。
+#
+# 结论 2：M6 在本系统中仍然【适用】，适用形态是"端到端业务协同流（COLLABORATION）"。
+#   规范 §6.1 明确 M6 承载两类流程；本系统把逆向得到的 10 条端到端流程表达为 COLLABORATION 协同流，
+#   对应用户任务（管理员后台配置）与系统任务（网关、自检、审计、文件、调度）两类活动的同步顺序编排。
+#
+# 结论 3：Quartz 定时任务链不是审批流，本文件按规范允许的方式放入 M6。
+#   依据：规范 §6.3.2 FlowTrigger.triggerType 明确提供 SCHEDULE 取值（Cron 表达式），
+#   §6.2.1 的 COLLABORATION 描述"一个业务目标跨阶段、跨对象的完整生命周期"，未限定必须由人工发起；
+#   故 FLOW-QUARTZ-JOB-001 以 flowType=COLLABORATION + trigger.triggerType=SCHEDULE 建模，符合规范。
+#
+# 结论 4：本文件不使用 SUB_FLOW_CALL。
+#   依据：flow-index.md 的"流程间依赖关系"表显示各链路之间是"前置配置 → 后置消费"的顺序依赖
+#   （如 FLOW-APP-ONBOARD → FLOW-OPEN-GATEWAY、FLOW-INTERFACE-DEFINE → FLOW-OPEN-GATEWAY），
+#   并非流程内子流程调用；# 推断：不以 SUB_FLOW_CALL 表达跨链依赖，避免虚构调用关系与调用环。
+#
+# 结论 5：所有"流转"在本系统中都是数据/状态流转，无人工审批决策。
+#   人工活动（USER_TASK）只出现在管理员维护配置的后台操作上，且只能通过 roleRef 引用 M5 角色；
+#   系统间调用（网关、自检、审计、文件 IO、调度）全部以 SYSTEM_TASK / BEHAVIOR_CALL 表达。
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# 二、roleRef 约定（引用 M5 主体模型）
+# ══════════════════════════════════════════════════════════════════════════════
+# 系统种子仅有两个角色（事实：open-api/deploy/local-docker/{mysql,postgres}/init/10-qvsu.sql:126-127）：
+#   ROLE-ADMIN  = sys_role.role_id=1，role_name=超级管理员，role_key=admin（菜单 SQL 已授予 system:* 与 monitor:job:*
+#                 权限；admin 账号另经 UserRealm 的 user.isAdmin() 直接获得角色 admin 与权限串 *:*:*，事实）
+#   ROLE-COMMON = sys_role.role_id=2，role_name=普通角色，role_key=common（菜单 SQL 已授予系统域菜单，
+#                 并在 open_api_menu.sql:46-62 中被授予 open:* 菜单的可见性，事实）
+# # 推断：M5 主体模型尚未产出，本文件按上述 roleId 命名引用；M5 建模时应沿用同一 ID。
+# 第三方应用（appKey 调用方）是外部实体：v9.0 已移除 ExternalEntity，且 M6 人工活动只能引用 M5 角色，
+#   故外部调用方不作为 roleRef，而以 trigger（BEHAVIOR 触发）+ SYSTEM_TASK 活动表达，并在流程注释中列明参与方。
+# 无人工活动的流程（网关调用、自检）其 roleRefs 为空数组，符合规范 §6.5.3（仅要求人工活动的 roleRef 属于 roleRefs）。
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 三、流程编号与逆向流程的对应关系
+# ══════════════════════════════════════════════════════════════════════════════
+# FLOW-OPEN-GATEWAY-001        ← FLOW-OPEN-GATEWAY（网关调用端到端协同链）
+# FLOW-ADMIN-LOGIN-001         ← FLOW-ADMIN-LOGIN（管理员登录协同链）
+# FLOW-RBAC-AUTHZ-001          ← FLOW-RBAC-AUTHZ（用户/角色/菜单授权链）
+# FLOW-APP-ONBOARD-001         ← FLOW-APP-ONBOARD（应用接入与授权链）
+# FLOW-INTERFACE-DEFINE-001    ← FLOW-INTERFACE-DEFINE（接口定义维护与文档链）
+# FLOW-CALLLOG-QUERY-001       ← FLOW-CALLLOG-QUERY（调用日志查询与导出链）
+# FLOW-QUARTZ-JOB-001          ← FLOW-QUARTZ-JOB（定时任务执行链，SCHEDULE 触发）
+# FLOW-SELFTEST-001            ← FLOW-SELFTEST（开放平台自检闭环）
+# FLOW-OPER-AUDIT-001          ← FLOW-OPER-AUDIT（操作审计协同链）
+# FLOW-FILE-IO-001             ← FLOW-FILE-IO（文件上传下载链）
+# 说明：flow-index.md 的 FLOW-* 是逆向文档内的章节标签，不属于稳定 ID 前缀集合；
+#       本文件按规范 FLOW-{DOMAIN}-{NNN} 重新编号，并在每条流程注释中保留逆向编号。
+
+model_type: FLOW
+version: "1.0"
+domain: "开放平台接口管理与网关服务"
+
+flows:
+  # ── 逆向编号：FLOW-OPEN-GATEWAY ｜ 触发：外部 HTTP 请求 /open/** ──
+  # 参与方（注释登记，非 roleRef）：第三方应用（持 appKey/appSecret，HMAC-SHA256 签名）、
+  #   开放平台网关（OpenApiFilter 鉴权 + OpenGatewayController 转发）、被代理的真实业务系统（open_api.target_url）、
+  #   平台管理员（前置配置，见 FLOW-APP-ONBOARD-001 / FLOW-INTERFACE-DEFINE-001）。
+  # 异常与补偿：错误码 40001~40005（鉴权类，HTTP 恒 200）与 50001/50002（转发类）；
+  #   调用日志写在 OpenApiFilter 的 finally 中，异常被吞（事实），链路无事务、无重试、无补偿；
+  #   nonce 去重基于进程内 ConcurrentHashMap，# 推断：多实例或重启后幂等退化。
+  - id: FLOW-OPEN-GATEWAY-001
+    name: 第三方应用调用开放平台接口协同流
+    flowType: COLLABORATION
+    description: "外部应用经 /open/** 发起调用，网关完成凭据解析、应用与接口校验、授权判定、签名验签、下游转发与调用日志落库的端到端协同链"
+    businessObjectRefs:
+      - AGG-OPEN-APP-001
+      - AGG-OPEN-API-001
+      - AGG-OPEN-APP-API-001
+      - AGG-OPEN-CALL-LOG-001
+    roleRefs: []
+    trigger:
+      triggerType: BEHAVIOR
+      behaviorRef: OpenGateway_Authenticate
+    preconditions:
+      - "应用与接口定义、授权关系已由管理员配置完成（open_app / open_api / open_app_api）"
+      - "请求 URI 以 /open/ 开头（OpenApiFilter.shouldNotFilter 放行其余路径）"
+      - "请求体可缓存（CachedBodyHttpServletRequest）"
+    postconditions:
+      - "调用方收到统一 OpenResult 响应（HTTP 状态恒为 200，响应头含 X-Trace-Id）"
+      - "open_call_log 新增一条调用流水（成功、鉴权失败、转发异常三种情况均记录）"
+    startActivity: A01
+    endActivities: [A08, A09, A10, A11]
+    activities:
+      - activityId: A01
+        name: 开始
+        activityType: START
+        nextActivities: [A02]
+      - activityId: A02
+        name: 网关鉴权与路由决策（traceId → 路径匹配 → 应用校验 → nonce 去重 → 授权判定 → 签名验签）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenGateway_Authenticate
+        nextActivities: [A03]
+      - activityId: A03
+        name: 鉴权结果判断
+        activityType: GATEWAY
+        branches:
+          - branchName: 鉴权失败（40001 缺头或 appKey 无效 / 40002 时间戳超差 / 40003 签名不符 / 40004 路径或授权问题 / 40005 nonce 重复）
+            conditionExpression: "gatewayAuth.result == 'FAIL'"
+            targetActivity: A04
+            isDefault: false
+          - branchName: 鉴权通过
+            conditionExpression: null
+            targetActivity: A05
+            isDefault: true
+      - activityId: A04
+        name: 记录鉴权失败调用日志（status=1）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenCallLog_Record
+        nextActivities: [A08]
+      - activityId: A05
+        name: 转发请求到目标业务系统（RestTemplate，超时取 timeout_ms 缺省 5000ms）
+        activityType: BEHAVIOR_CALL
+        behaviorRef: OpenApiProxy_Forward
+        nextActivities: [A06]
+      - activityId: A06
+        name: 记录调用日志（成功 status=0 / 转发失败或超时 status=2）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenCallLog_Record
+        nextActivities: [A07]
+      - activityId: A07
+        name: 转发结果判断
+        activityType: GATEWAY
+        branches:
+          - branchName: 下游超时（50002）
+            conditionExpression: "proxy.errorCode == 50002"
+            targetActivity: A09
+            isDefault: false
+          - branchName: 转发异常或方法不支持（50001）
+            conditionExpression: "proxy.errorCode == 50001"
+            targetActivity: A10
+            isDefault: false
+          - branchName: 调用成功
+            conditionExpression: null
+            targetActivity: A11
+            isDefault: true
+      - activityId: A08
+        name: 鉴权失败结束
+        activityType: END
+        nextActivities: []
+      - activityId: A09
+        name: 下游超时结束
+        activityType: END
+        nextActivities: []
+      - activityId: A10
+        name: 转发异常结束
+        activityType: END
+        nextActivities: []
+      - activityId: A11
+        name: 调用成功结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-ADMIN-LOGIN ｜ 触发：浏览器 GET/POST /login ──
+  # 参与方：未认证用户 / 管理员、Shiro 过滤链（CaptchaValidateFilter、KickoutSessionFilter）、
+  #   UserRealm、SysLoginService、SysPasswordService、OnlineWebSessionManager。
+  # 异常与补偿：认证失败按异常类型映射（UnknownAccount / IncorrectCredentials / ExcessiveAttempts / LockedAccount），
+  #   失败消息直接回显前端（事实）；重试计数存于 Ehcache，# 推断：重启清零、多实例不共享，无补偿机制。
+  - id: FLOW-ADMIN-LOGIN-001
+    name: 管理员登录协同流
+    flowType: COLLABORATION
+    description: "管理员输入账号密码与验证码，经验证码校验、Shiro Realm 认证、日志落库、会话建立与菜单权限加载的端到端协同链"
+    businessObjectRefs:
+      - AGG-USER-001
+      - AGG-USER-ONLINE-001
+      - AGG-LOGININFOR-001
+      - AGG-MENU-001
+      - AGG-CONFIG-001
+    roleRefs:
+      - ROLE-ADMIN
+      - ROLE-COMMON
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "账号已存在于 sys_user 且 del_flag='0'"
+      - "sys_config 中 sys.login.blackIPList、sys.index.* 等参数已配置"
+      - "shiro.user.captchaEnabled=true 时验证码可用（/captcha/** 为 anon）"
+    postconditions:
+      - "建立 Shiro 会话（expireTime=30 分钟）并装载角色与权限集合"
+      - "无论成功或失败均写入 sys_logininfor；成功时更新 sys_user 登录信息与 sys_user_online"
+    startActivity: L01
+    endActivities: [L08, L09]
+    activities:
+      - activityId: L01
+        name: 开始
+        activityType: START
+        nextActivities: [L02]
+      - activityId: L02
+        name: 输入账号密码与验证码并提交（发起方为未认证用户，M6 人工活动只能引用 M5 角色，故以系统内典型登录角色 ROLE-ADMIN 承载）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: SysUser_Login
+        nextActivities: [L03]
+      - activityId: L03
+        name: 认证结果判断
+        activityType: GATEWAY
+        branches:
+          - branchName: 认证失败（验证码错误 / 账号不存在或已删除 / 停用 / 密码错误 / 超重试上限 / IP 黑名单 / 角色封禁）
+            conditionExpression: "login.result == 'FAIL'"
+            targetActivity: L07
+            isDefault: false
+          - branchName: 认证通过
+            conditionExpression: null
+            targetActivity: L04
+            isDefault: true
+      - activityId: L04
+        name: 记录登录成功日志并更新登录信息（由 SysUser_Login 的 syncTriggers 触发，异步写入）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysLogininfor_Record
+        nextActivities: [L05]
+      - activityId: L05
+        name: 同步在线会话记录（AsyncFactory.syncSessionToDb）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysUserOnline_Sync
+        nextActivities: [L06]
+      - activityId: L06
+        name: 加载菜单树与权限集合并渲染后台首页
+        activityType: SYSTEM_TASK
+        behaviorRef: SysMenu_RenderIndex
+        nextActivities: [L08]
+      - activityId: L07
+        name: 记录登录失败日志（status=1）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysLogininfor_Record
+        nextActivities: [L09]
+      - activityId: L08
+        name: 登录成功结束
+        activityType: END
+        nextActivities: []
+      - activityId: L09
+        name: 登录失败结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-RBAC-AUTHZ ｜ 触发：后台管理操作 ──
+  # 参与方：管理员（配置方）、Shiro Subject（判定方）、UserRealm / SysMenuServiceImpl（权限装载方）。
+  # 异常与补偿：无权限 → AuthorizationException（Ajax code=500 或 error/unauth）；
+  #   越权数据 → DataScopeAspect 拼出 dept_id=0 返回空集（静默，事实）；
+  #   授权变更后需清 Shiro 授权缓存 SYS_AUTH_CACHE 才生效（# 推断：系统未在保存时主动清缓存，无自动补偿）。
+  - id: FLOW-RBAC-AUTHZ-001
+    name: 用户角色菜单授权协同流
+    flowType: COLLABORATION
+    description: "管理员维护角色与菜单权限、数据范围，维护用户并分配角色，最终由 Shiro 装载授权集合的端到端协同链"
+    businessObjectRefs:
+      - AGG-ROLE-001
+      - AGG-MENU-001
+      - AGG-ROLE-MENU-001
+      - AGG-USER-001
+      - AGG-USER-ROLE-001
+      - AGG-ROLE-DEPT-001
+      - AGG-DEPT-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "管理员已登录（见 FLOW-ADMIN-LOGIN-001）且被授予 system:role:* / system:user:* 权限"
+      - "目标菜单、部门已存在"
+    postconditions:
+      - "角色-菜单、角色-部门、用户-角色关联与角色/用户主数据一致"
+      - "授权缓存重载后新权限对下一次鉴权生效"
+    startActivity: R01
+    endActivities: [R10, R11]
+    activities:
+      - activityId: R01
+        name: 开始
+        activityType: START
+        nextActivities: [R02]
+      - activityId: R02
+        name: 维护角色并勾选菜单权限（新增/修改角色）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: SysRole_Edit
+        nextActivities: [R03]
+      - activityId: R03
+        name: 同步角色菜单关联（由 SysRole_Edit 的 syncTriggers 触发，先删后插）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysRoleMenu_Grant
+        nextActivities: [R04]
+      - activityId: R04
+        name: 数据范围判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 自定义数据范围（data_scope=2）
+            conditionExpression: "role.dataScope == 2"
+            targetActivity: R05
+            isDefault: false
+          - branchName: 其他数据范围（1 全部 / 3 本部门 / 4 本部门及以下 / 5 仅本人）
+            conditionExpression: null
+            targetActivity: R06
+            isDefault: true
+      - activityId: R05
+        name: 维护角色自定义部门范围
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: SysRole_AuthDataScope
+        nextActivities: [R06]
+      - activityId: R06
+        name: 维护用户并分配角色
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: SysUser_AuthRole
+        nextActivities: [R07]
+      - activityId: R07
+        name: 同步用户角色关联（由 SysUser_AuthRole 的 syncTriggers 触发，先删后插）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysUserRole_Grant
+        nextActivities: [R08]
+      - activityId: R08
+        name: 授权写入校验结果判断
+        activityType: GATEWAY
+        branches:
+          - branchName: 校验不通过（角色名或权限字符重复 / 超管账号保护 / 角色已分配用户被拒删）
+            conditionExpression: "authz.check == 'FAIL'"
+            targetActivity: R10
+            isDefault: false
+          - branchName: 校验通过
+            conditionExpression: null
+            targetActivity: R09
+            isDefault: true
+      - activityId: R09
+        name: 授权集合生效（重载角色与菜单权限，清理授权缓存）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysMenu_RenderIndex
+        nextActivities: [R11]
+      - activityId: R10
+        name: 校验失败结束
+        activityType: END
+        nextActivities: []
+      - activityId: R11
+        name: 授权生效结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-APP-ONBOARD ｜ 触发：后台页面 /admin/open/app 与 /admin/open/auth ──
+  # 参与方：平台管理员（登记与授权方）、第三方应用（消费方）、网关（校验方）。
+  # 异常与补偿：appKey 唯一约束冲突由数据库抛错并透传消息（推断）；
+  #   saveAppAuth 为"先全删再批量插入"（非差量），并发保存互相覆盖（推断，无乐观锁）；
+  #   open_app_api 无外键约束（事实）；密钥泄露需通过 resetSecret 重新生成并线下重新分发。
+  - id: FLOW-APP-ONBOARD-001
+    name: 应用接入与授权协同流
+    flowType: COLLABORATION
+    description: "管理员登记第三方应用、生成并维护密钥与有效期、维护应用状态、勾选可调用接口形成授权集合，最终由网关按授权放行的端到端协同链"
+    businessObjectRefs:
+      - AGG-OPEN-APP-001
+      - AGG-OPEN-API-001
+      - AGG-OPEN-APP-API-001
+      - AGG-OPEN-CALL-LOG-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "管理员已登录且菜单可见（open:app:view / open:auth:view）"
+      - "待授权的接口定义已存在（见 FLOW-INTERFACE-DEFINE-001）"
+    postconditions:
+      - "open_app 中存在状态为 1、未过期的应用及其密钥"
+      - "open_app_api 中存在该应用的可调用接口集合，网关侧即时生效"
+    startActivity: O01
+    endActivities: [O08, O09, O10]
+    activities:
+      - activityId: O01
+        name: 开始
+        activityType: START
+        nextActivities: [O02]
+      - activityId: O02
+        name: 登记应用（服务端生成 appKey 与 appSecret）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApp_Add
+        nextActivities: [O03]
+      - activityId: O03
+        name: appKey 唯一性判定
+        activityType: GATEWAY
+        branches:
+          - branchName: appKey 冲突或表单校验失败
+            conditionExpression: "app.check == 'FAIL'"
+            targetActivity: O08
+            isDefault: false
+          - branchName: 登记成功
+            conditionExpression: null
+            targetActivity: O04
+            isDefault: true
+      - activityId: O04
+        name: 维护应用联系人、状态与有效期（停用后网关侧即时拒绝调用）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApp_Edit
+        nextActivities: [O05]
+      - activityId: O05
+        name: 勾选可调用接口并保存授权
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenAuth_Save
+        nextActivities: [O06]
+      - activityId: O06
+        name: 同步应用接口授权关联（由 OpenAuth_Save 的 syncTriggers 触发，全量重建）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenAppApi_Sync
+        nextActivities: [O07]
+      - activityId: O07
+        name: 授权集合是否为空判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 未勾选任何接口（无可调用能力）
+            conditionExpression: "appAuth.apiCount == 0"
+            targetActivity: O09
+            isDefault: false
+          - branchName: 已授权至少一个接口
+            conditionExpression: null
+            targetActivity: O10
+            isDefault: true
+      - activityId: O08
+        name: 接入失败结束（appKey 冲突等）
+        activityType: END
+        nextActivities: []
+      - activityId: O09
+        name: 接入完成但无可调用接口结束
+        activityType: END
+        nextActivities: []
+      - activityId: O10
+        name: 接入与授权闭环完成结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-INTERFACE-DEFINE ｜ 触发：后台页面 /admin/open/api 与 /admin/open/doc ──
+  # 参与方：平台管理员（定义方）、下游业务系统（被代理方）、第三方应用（文档消费方）。
+  # 异常与补偿：接口不存在 → AjaxResult.error("接口不存在")；删除接口先级联解除应用授权（事实，@Transactional）；
+  #   文档每次生成新增一条记录、无 update 入口，会持续累积（事实，无清理补偿）；
+  #   文档下载异常被 try/catch(Exception ignored) 完全吞掉（事实）。
+  - id: FLOW-INTERFACE-DEFINE-001
+    name: 接口定义维护与文档协同流
+    flowType: COLLABORATION
+    description: "管理员登记与维护开放接口定义，运行期网关按 api_path/target_url/need_sign 即时生效，并按应用与接口集合生成对外文档的端到端协同链"
+    businessObjectRefs:
+      - AGG-OPEN-API-001
+      - AGG-OPEN-API-DOC-001
+      - AGG-OPEN-APP-API-001
+      - AGG-OPEN-APP-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "管理员已登录且菜单可见（open:api:view / open:doc:view）"
+      - "目标下游系统 target_url 可达（登记时不校验）"
+    postconditions:
+      - "open_api 中存在 status=1 的接口定义并即时参与网关路由"
+      - "open_api_doc 中存在对应文档记录，可预览或下载 HTML"
+    startActivity: I01
+    endActivities: [I10, I11]
+    activities:
+      - activityId: I01
+        name: 开始
+        activityType: START
+        nextActivities: [I02]
+      - activityId: I02
+        name: 登记开放接口定义（路径、方法、目标地址、超时、签名开关）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApi_Add
+        nextActivities: [I03]
+      - activityId: I03
+        name: 修改接口定义（含 api_path / target_url / need_sign）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApi_Edit
+        nextActivities: [I04]
+      - activityId: I04
+        name: 运行期关键列是否变更判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 变更了 api_path / target_url / need_sign（影响鉴权与转发）
+            conditionExpression: "api.runtimeKeyChanged == true"
+            targetActivity: I05
+            isDefault: false
+          - branchName: 仅变更名称、描述或示例
+            conditionExpression: null
+            targetActivity: I06
+            isDefault: true
+      - activityId: I05
+        name: 运行期即时生效（网关每次请求按最新定义鉴权与转发，无缓存、无需重启）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenGateway_Authenticate
+        nextActivities: [I06]
+      - activityId: I06
+        name: 选择应用与接口集合生成文档（每次生成新增一条 open_api_doc）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApiDoc_Generate
+        nextActivities: [I07]
+      - activityId: I07
+        name: 预览或下载文档 HTML（现场重新生成，不落库）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApiDoc_Download
+        nextActivities: [I08]
+      - activityId: I08
+        name: 是否需要下线接口判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 需要下线（接口不再对外提供）
+            conditionExpression: "api.needOffline == true"
+            targetActivity: I09
+            isDefault: false
+          - branchName: 继续保留
+            conditionExpression: null
+            targetActivity: I11
+            isDefault: true
+      - activityId: I09
+        name: 删除接口定义并级联解除应用授权
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenApi_Remove
+        nextActivities: [I10]
+      - activityId: I10
+        name: 接口已下线结束
+        activityType: END
+        nextActivities: []
+      - activityId: I11
+        name: 接口与文档闭环完成结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-CALLLOG-QUERY ｜ 触发：后台页面 /admin/open/log + 网关写入 ──
+  # 参与方：网关（写入方，见 FLOW-OPEN-GATEWAY-001）、平台管理员（查询/导出方）。
+  # 异常与补偿：日志写入异常被吞（事实，调用不受影响但日志缺失，无补偿）；
+  #   导出异常仅打日志，浏览器可能收到空体（事实）；
+  #   统计 SQL 使用 PostgreSQL 专有语法，MySQL 下报语法错误（事实）。
+  - id: FLOW-CALLLOG-QUERY-001
+    name: 调用日志查询与导出协同流
+    flowType: COLLABORATION
+    description: "管理员按应用、接口、时间与结果条件分页查询调用流水，查看今日统计与 Top5，并按需导出全量 CSV 的端到端协同链"
+    businessObjectRefs:
+      - AGG-OPEN-CALL-LOG-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "管理员已登录且菜单可见（open:log:view）"
+      - "网关已产生调用流水（open_call_log 由 FLOW-OPEN-GATEWAY-001 写入）"
+    postconditions:
+      - "管理员获得分页结果、今日统计指标或全量 CSV 文件"
+      - "查询与导出均为只读，不修改 open_call_log"
+    startActivity: C01
+    endActivities: [C07, C08]
+    activities:
+      - activityId: C01
+        name: 开始
+        activityType: START
+        nextActivities: [C02]
+      - activityId: C02
+        name: 按 trace_id / app_key / api_path 模糊 / status / 时间区间分页查询调用日志
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenCallLog_QueryPage
+        nextActivities: [C03]
+      - activityId: C03
+        name: 查看今日调用统计与 Top5 应用分组
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenCallLog_Stats
+        nextActivities: [C04]
+      - activityId: C04
+        name: 是否需要导出判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 需要导出
+            conditionExpression: "log.exportRequested == true"
+            targetActivity: C05
+            isDefault: false
+          - branchName: 仅在线查看
+            conditionExpression: null
+            targetActivity: C07
+            isDefault: true
+      - activityId: C05
+        name: 导出 CSV（未调用分页，按筛选条件全量导出，UTF-8 BOM）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: OpenCallLog_ExportCsv
+        nextActivities: [C06]
+      - activityId: C06
+        name: 导出结果判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 导出异常（异常被捕获仅打日志，可能返回空响应）
+            conditionExpression: "log.exportFailed == true"
+            targetActivity: C08
+            isDefault: false
+          - branchName: 导出成功
+            conditionExpression: null
+            targetActivity: C07
+            isDefault: true
+      - activityId: C07
+        name: 查询与导出完成结束
+        activityType: END
+        nextActivities: []
+      - activityId: C08
+        name: 导出异常结束（需重试）
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-QUARTZ-JOB ｜ 触发：启动加载 + Cron 触发 + 管理员手工触发 ──
+  # 说明（重要）：本流程是"定时任务执行链"，不是审批流；规范 §6.3.2 允许 SCHEDULE 触发类型，
+  #   故以 COLLABORATION + SCHEDULE 建模（见文件头"结论 3"）。
+  # 参与方：管理员（定义/启停方）、Quartz Scheduler（调度方）、QvsuTask / HttpTask（执行体）、sys_job_log（审计）。
+  # 异常与补偿：执行异常被 AbstractQuartzJob.execute 捕获并落 status=FAIL（不再上抛，事实）；
+  #   misfire_policy 决定错失触发的补偿策略；concurrent='0' 由 @DisallowConcurrentExecution 阻止同任务并发；
+  #   # 推断：scheduler.pauseJob/resumeJob/deleteJob 直接操作 QRTZ_* 表，与 sys_job 不在同一事务域，外围回滚时调度状态可能已变更。
+  - id: FLOW-QUARTZ-JOB-001
+    name: 定时任务定义与调度执行协同流
+    flowType: COLLABORATION
+    description: "管理员定义与启停定时任务，Quartz 按 Cron 调度（或管理员立即触发一次），执行体分派 HTTP 或 Bean 调用并统一记录调度日志的端到端协同链"
+    businessObjectRefs:
+      - AGG-JOB-001
+      - AGG-JOB-LOG-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: SCHEDULE
+      scheduleExpression: "Cron，取自 sys_job.cron_expression（示例：0/10 * * * * ?），由 ScheduleUtils.createScheduleJob 注册；应用启动时 SysJobServiceImpl.init 全量加载 status='0' 的任务"
+    preconditions:
+      - "应用启动完成且 init 已完成调度注册（TaskException 仅记日志，不中断启动）"
+      - "Cron 表达式通过 CronUtils.isValid 校验"
+      - "invoke_target（Bean 或全限定类名+方法）或 request_url 合法"
+    postconditions:
+      - "每次执行（成功或失败）均在 sys_job_log 新增一行"
+      - "sys_job 定义与 Quartz 调度器状态保持一致"
+    startActivity: J01
+    endActivities: [J10, J11]
+    activities:
+      - activityId: J01
+        name: 开始
+        activityType: START
+        nextActivities: [J02]
+      - activityId: J02
+        name: 定义或调整任务（类型、调用目标、Cron、并发与 misfire 策略）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: Job_Add
+        nextActivities: [J03]
+      - activityId: J03
+        name: 任务调度状态判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 任务处于暂停（status='1'）
+            conditionExpression: "job.status == '1'"
+            targetActivity: J04
+            isDefault: false
+          - branchName: 任务处于正常（status='0'）
+            conditionExpression: null
+            targetActivity: J05
+            isDefault: true
+      - activityId: J04
+        name: 恢复任务调度（scheduler.resumeJob）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: Job_ChangeStatus
+        nextActivities: [J05]
+      - activityId: J05
+        name: 是否手工触发验证判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 管理员立即执行一次（scheduler.triggerJob）
+            conditionExpression: "job.manualTrigger == true"
+            targetActivity: J06
+            isDefault: false
+          - branchName: 仅等待 Cron 触发
+            conditionExpression: null
+            targetActivity: J07
+            isDefault: true
+      - activityId: J06
+        name: 立即执行一次任务
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: Job_RunOnce
+        nextActivities: [J07]
+      - activityId: J07
+        name: 分派执行任务（HTTP 任务走 invokeHttp，Bean 任务走反射调用）
+        activityType: SYSTEM_TASK
+        behaviorRef: Job_Execute
+        nextActivities: [J08]
+      - activityId: J08
+        name: 写调度日志（由 Job_Execute 的 syncTriggers 触发，成功与失败均写）
+        activityType: SYSTEM_TASK
+        behaviorRef: JobLog_Record
+        nextActivities: [J09]
+      - activityId: J09
+        name: 执行结果判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 执行异常（目标 Bean 或类不存在、方法抛异常）
+            conditionExpression: "jobExec.status == 'FAIL'"
+            targetActivity: J10
+            isDefault: false
+          - branchName: 执行成功
+            conditionExpression: null
+            targetActivity: J11
+            isDefault: true
+      - activityId: J10
+        name: 执行失败结束
+        activityType: END
+        nextActivities: []
+      - activityId: J11
+        name: 执行成功结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-SELFTEST ｜ 触发：自检脚本/集成测试发起的 HTTP 请求与种子 SQL ──
+  # 参与方：自检桩（OpenSelftestHttpbinController，/selftest/** 为 Shiro anon 且不被 OpenApiFilter 拦截）、
+  #   网关链路、种子脚本（open_api_selftest_seed.sql）、JUnit 集成测试。
+  # 异常与补偿：种子脚本可重复执行（先删后插，幂等）；open_api_httpbin_min_seed.sql 使用 MySQL 的
+  #   ON DUPLICATE KEY UPDATE，在 PostgreSQL 下报错（事实）；90003–90005 目标为公网 httpbin.org，
+  #   离线环境自检以 50001/50002 失败（事实）；无事务封装，中途失败留下不一致状态（推断）→ 补偿方式为重跑种子 SQL。
+  - id: FLOW-SELFTEST-001
+    name: 开放平台自检闭环协同流
+    flowType: COLLABORATION
+    description: "装载自检种子应用与接口，经完整网关链路发起自检调用，并校验 open_call_log 落库以证明链路可用的端到端协同链"
+    businessObjectRefs:
+      - AGG-OPEN-APP-001
+      - AGG-OPEN-API-001
+      - AGG-OPEN-APP-API-001
+      - AGG-OPEN-CALL-LOG-001
+    roleRefs: []
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "已执行 open_api_selftest_seed.sql（应用 s_id=90001、接口 90001~90005、仅授权 4 个接口）"
+      - "服务实例已启动并监听 server.port=5656"
+      - "自检脚本或集成测试具备网络访问能力（90003–90005 依赖公网 httpbin.org）"
+    postconditions:
+      - "自检结果 code=0 或复现出预期错误码（50002 超时 / 40004 未授权）"
+      - "open_call_log 中存在对应 trace_id 的调用流水，证明网关写日志链路可用"
+    startActivity: S01
+    endActivities: [S05, S06, S08]
+    activities:
+      - activityId: S01
+        name: 开始
+        activityType: START
+        nextActivities: [S02]
+      - activityId: S02
+        name: 幂等装载自检种子（应用、接口、授权）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenSelftest_LoadSeed
+        nextActivities: [S03]
+      - activityId: S03
+        name: 经网关发起自检调用（/open/selftest/** 走完整鉴权与转发链路）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenGateway_Authenticate
+        nextActivities: [S04]
+      - activityId: S04
+        name: 自检结果分类判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 下游超时（50002，对应故意不可达的 90002 目标）
+            conditionExpression: "selftest.code == 50002"
+            targetActivity: S05
+            isDefault: false
+          - branchName: 应用无接口授权（40004，对应故意未授权的 90002）
+            conditionExpression: "selftest.code == 40004"
+            targetActivity: S06
+            isDefault: false
+          - branchName: 调用成功（code=0）
+            conditionExpression: null
+            targetActivity: S07
+            isDefault: true
+      - activityId: S05
+        name: 超时分支已按预期复现结束
+        activityType: END
+        nextActivities: []
+      - activityId: S06
+        name: 未授权分支已按预期复现结束
+        activityType: END
+        nextActivities: []
+      - activityId: S07
+        name: 校验调用日志落库（按 trace_id 断言）
+        activityType: SYSTEM_TASK
+        behaviorRef: OpenSelftest_VerifyChain
+        nextActivities: [S08]
+      - activityId: S08
+        name: 自检闭环通过结束
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-OPER-AUDIT ｜ 触发：任意带 @Log 的 Controller 方法调用 ──
+  # 参与方：被审计的管理员、LogAspect（采集方）、AsyncManager/AsyncFactory（异步落库）、sys_oper_log（存储）。
+  # 异常与补偿：切面异常与异步异常均被吞掉（事实），审计可能静默丢失且无补偿；
+  #   审计写入与业务事务完全解耦：业务回滚时审计仍可能落库（记录的是"曾尝试执行"）；
+  #   审计盲区：OpenLogController / OpenAuthController / OpenDocController 的写操作未加 @Log（事实）。
+  - id: FLOW-OPER-AUDIT-001
+    name: 操作审计协同流
+    flowType: COLLABORATION
+    description: "管理员的带 @Log 写操作被切面采集为审计记录并异步落库 sys_oper_log 的协同链；当前仅覆盖应用管理与接口管理的增删改"
+    businessObjectRefs:
+      - AGG-OPER-LOG-001
+      - AGG-OPEN-APP-001
+      - AGG-OPEN-API-001
+    roleRefs:
+      - ROLE-ADMIN
+    trigger:
+      triggerType: BEHAVIOR
+      behaviorRef: OpenApp_Add
+    preconditions:
+      - "管理员已登录（ShiroUtils.getSysUser() 可取到当前用户）"
+      - "目标方法标注 @Log(title, businessType)（已确认：OpenAppController、OpenApiMgrController 的增删改）"
+    postconditions:
+      - "sys_oper_log 新增一行审计记录（含请求参数、响应、耗时与结果状态）"
+    startActivity: U01
+    endActivities: [U04]
+    activities:
+      - activityId: U01
+        name: 开始
+        activityType: START
+        nextActivities: [U02]
+      - activityId: U02
+        name: 切面采集审计信息（ThreadLocal 计时、当前用户与 IP、脱敏后的请求参数与响应体）
+        activityType: SYSTEM_TASK
+        behaviorRef: SysOperLog_Record
+        nextActivities: [U03]
+      - activityId: U03
+        name: 业务结果判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 业务方法抛出异常（status=失败，记录 error_msg）
+            conditionExpression: "audit.businessFailed == true"
+            targetActivity: U04
+            isDefault: false
+          - branchName: 业务方法正常返回（status=成功）
+            conditionExpression: null
+            targetActivity: U04
+            isDefault: true
+      - activityId: U04
+        name: 审计记录落库结束（异步写入，失败仅打日志、不影响业务返回）
+        activityType: END
+        nextActivities: []
+
+  # ── 逆向编号：FLOW-FILE-IO ｜ 触发：页面 AJAX 上传 + 浏览器下载 ──
+  # 参与方：管理员（操作方）、本地文件系统（存储方）、ServerConfig（URL 前缀）、QvsuConfig（路径配置）。
+  # 异常与补偿：上传非幂等（重复上传产生多份文件，无清理补偿）；下载方法不向前端返回错误只写服务端日志（事实）；
+  #   delete=true 的下载是"读后删"，重复调用第二次失败（事实）；
+  #   /common/** 不在 XSS 过滤的 urlPatterns（/system/*,/tool/*）内（事实）。
+  - id: FLOW-FILE-IO-001
+    name: 文件上传下载协同流
+    flowType: COLLABORATION
+    description: "已登录用户通过统一入口上传文件（校验类型与大小后落盘并返回可访问 URL）与按受控路径下载文件/读取本地资源的协同链"
+    businessObjectRefs: []
+    roleRefs:
+      - ROLE-ADMIN
+      - ROLE-COMMON
+    trigger:
+      triggerType: MANUAL
+    preconditions:
+      - "会话有效（/common/** 落在 Shiro /** 段 user 过滤内，无 @RequiresPermissions）"
+      - "上传目录 qvsu.profile=D:/qvsu/uploadPath 可写；static 资源映射已注册"
+    postconditions:
+      - "上传：文件落盘并返回可访问 URL（文件元数据不落库）"
+      - "下载：响应流返回文件字节，delete=true 时源文件被删除"
+    startActivity: F01
+    endActivities: [F06, F07, F09]
+    activities:
+      - activityId: F01
+        name: 开始
+        activityType: START
+        nextActivities: [F02]
+      - activityId: F02
+        name: 选择文件并提交上传（单文件 /common/upload 或多文件 /common/uploads）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: FileResource_Upload
+        nextActivities: [F03]
+      - activityId: F03
+        name: 文件类型与大小校验判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 校验不通过（超过 max-file-size=10MB / 扩展名不在白名单 / 文件名超长）
+            conditionExpression: "file.check == 'FAIL'"
+            targetActivity: F06
+            isDefault: false
+          - branchName: 校验通过
+            conditionExpression: null
+            targetActivity: F04
+            isDefault: true
+      - activityId: F04
+        name: 落盘并返回可访问 URL（serverConfig.getUrl() + fileName）
+        activityType: SYSTEM_TASK
+        behaviorRef: FileResource_Upload
+        nextActivities: [F05]
+      - activityId: F05
+        name: 需要下载文件判定
+        activityType: GATEWAY
+        branches:
+          - branchName: 需要下载
+            conditionExpression: "file.downloadRequested == true"
+            targetActivity: F08
+            isDefault: false
+          - branchName: 仅上传（页面上传头像、附件等）
+            conditionExpression: null
+            targetActivity: F07
+            isDefault: true
+      - activityId: F06
+        name: 上传失败结束
+        activityType: END
+        nextActivities: []
+      - activityId: F07
+        name: 上传完成结束
+        activityType: END
+        nextActivities: []
+      - activityId: F08
+        name: 按受控路径下载文件或读取本地资源（checkAllowDownload 路径校验）
+        activityType: USER_TASK
+        roleRef: ROLE-ADMIN
+        behaviorRef: FileResource_Download
+        nextActivities: [F09]
+      - activityId: F09
+        name: 下载完成结束（路径非法或文件不存在时仅写服务端日志，浏览器收到空响应）
+        activityType: END
+        nextActivities: []

@@ -1,0 +1,15 @@
+﻿spring:
+  datasource:
+    driverClassName: org.postgresql.Driver
+    druid:
+      master:
+        url: jdbc:postgresql://postgres:5432/jd_openapi?currentSchema=public&stringtype=unspecified
+        username: postgres
+        password: 123456
+
+pagehelper:
+  helperDialect: postgresql
+
+shiro:
+  user:
+    captchaEnabled: true

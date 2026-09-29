@@ -1,0 +1,2275 @@
+# =============================================================================
+# M7 查询统计与报表模型 — m7-report-model.yaml
+# 系统：SYS-qvsu-openapi（QVSU OpenAPI 管理与网关服务，精简版）
+# 建模方式：**基于已校验的逆向元模型正向表达**，不新造页面与报表。
+# 事实来源（只读引用，未修改）：
+#   - docs/meta-model/interface-index.md（195 个接口节点，含 HTTP 方法/路径/方法名/权限码）
+#   - docs/meta-model/database-schema.md（34 张表 342 字段，结果列字段级权威来源）
+#   - docs/meta-model/business-architecture.md（16 个菜单入口与按钮权限表）
+#   - docs/meta-model/business-function-requirements.md / functional-inventory.md（32 个功能）
+#   - 源码：open-api/qvsu-openapi/src/main/java/com/qvsu/open/service/OpenManageService.java（
+#     开放平台域全部列表查询为 JdbcTemplate 直写 SQL，非 MyBatis）、
+#     open-api/qvsu-openapi/src/main/resources/mapper/{system,quartz}/*.xml（平台域列表查询）
+#
+# 【约定 1｜objectRef 取值】本仓库 M1 对象模型（m1-object-model.yaml）尚未产出，
+#   故 sourceObjects.objectRef 统一引用逆向元模型 docs/meta-model/domain-model.md 中
+#   已有的稳定对象 ID `OBJ-*`（33 个），并把这些实体按其数据所有权视为聚合根。
+#   例：open_app → OBJ-OpenApp；sys_user → OBJ-SysUser。   # 推断：依据 domain-model.md 的 OBJ-* 主定义与 database-schema.md 的表↔实体同名映射
+#
+# 【约定 2｜behaviorRef 命名】本仓库 M2 行为模型尚未产出。按规范 §7.6 第 2 条，
+#   behaviorRef 必须指向 M2 中 behaviorType=QUERY 的行为，且与 M2 `queryReportRef`
+#   严格一对一。故此处给出唯一、可机械对齐的行为名：`<聚合根>_Query<语义>`。
+#   后续编写 m2-behavior-model.yaml 时，必须逐条以同名字符串回填 queryReportRef。
+#   # 推断：命名模式取自 docs/ontology/_spec/00-overview-and-relations.md 的 Contract_QueryList 等既有行为命名
+#
+# 【约定 3｜扩展键】M7-spec 模板未给「权限码 / 导出 / 排序 / 排序方向 / 物理表 / 统计维度」
+#   的字段位；而规范 §7.6 第 4 条明令 M7 **不得**出现 requiredPermissions 等跨模型字段。
+#   为既不违反该禁令、又能承载上述必要事实，本文件统一使用 `x_` 前缀的扩展键承载
+#   （权限码以「接口鉴权事实」记录，不是模型级权限引用；查询行为与查询报表都不在 M5 行为授权范围内）。
+#
+# 【约定 4｜排除项】本系统「操作日志查询」「登录日志查询」「在线用户监控」无查询端点、
+#   无查询界面、相关菜单与按钮权限已在 open_api_menu.sql:72-90 显式删除，
+#   故本文件**不为其建立任何查询报表**（functional-inventory.md 中的 FUNC-sys-operlog-query、
+#   FUNC-sys-logininfor-query、FUNC-sys-useronline-query 与之冲突，已在
+#   docs/meta-model/business-architecture.md §7.4/§7.5 登记为断链，本次不据其建模）。
+# =============================================================================
+model_type: REPORT
+version: "1.0"
+domain: "QVSU OpenAPI 管理与网关服务"
+
+query_reports:
+
+  # ---------------------------------------------------------------------------
+  # 一、系统管理域 — 用户与组织
+  # ---------------------------------------------------------------------------
+
+  - id: QR-SYS-USER-001
+    name: 用户列表查询
+    alias: sysUserList
+    objectType: LIST_QUERY
+    description: 按登录账号/手机号/状态/归属部门/创建时间范围分页查询系统用户，并按角色数据范围过滤（推断：SysUserMapper 含 dataScopeFilter）
+    behaviorRef: SysUser_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysUser
+        alias: sysUser
+        primary: true
+    joins: []
+    parameters:
+      - name: loginName
+        label: 登录账号
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysUser.loginName
+      - name: phonenumber
+        label: 手机号码
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysUser.phonenumber
+      - name: status
+        label: 账号状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysUser.status
+      - name: deptId
+        label: 归属部门
+        dataType: String
+        required: false
+        allowedOperators: [EQ, IN]
+        sourceField: sysUser.deptId
+      - name: beginTime
+        label: 创建开始时间
+        dataType: Date
+        required: false
+        allowedOperators: [GE]
+        sourceField: sysUser.createTime
+      - name: endTime
+        label: 创建结束时间
+        dataType: Date
+        required: false
+        allowedOperators: [LE]
+        sourceField: sysUser.createTime
+    conditions:
+      - conditionId: C01
+        leftExpression: sysUser.loginName
+        operator: LIKE
+        parameterRef: loginName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysUser.phonenumber
+        operator: LIKE
+        parameterRef: phonenumber
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysUser.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: "sysUser.deptId = ? OR sysUser.deptId IN (SELECT deptId FROM OBJ-SysDept WHERE position(',' || ? || ',' in ',' || ancestors || ',') > 0)"
+        operator: EQ
+        parameterRef: deptId
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: sysUser.createTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C06
+        leftExpression: sysUser.createTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: userId
+        label: 用户ID
+        dataType: Integer
+        sourceExpression: sysUser.userId
+        aggregateFunction: NONE
+      - name: loginName
+        label: 登录账号
+        dataType: String
+        sourceExpression: sysUser.loginName
+        aggregateFunction: NONE
+      - name: userName
+        label: 用户昵称
+        dataType: String
+        sourceExpression: sysUser.userName
+        aggregateFunction: NONE
+      - name: deptName
+        label: 部门名称
+        dataType: String
+        sourceExpression: sysDept.deptName
+        aggregateFunction: NONE
+      - name: phonenumber
+        label: 手机号码
+        dataType: String
+        sourceExpression: sysUser.phonenumber
+        aggregateFunction: NONE
+      - name: status
+        label: 账号状态
+        dataType: String
+        sourceExpression: sysUser.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysUser.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    # —— 以下为扩展事实键（x_ 前缀，见文件头【约定 3】）——
+    x_sourceTables:
+      - sys_user
+    x_queryEndpoint: "POST /system/user/list"
+    x_interfaceRef: API-SysUserController-list
+    x_interfacePermission: system:user:list
+    x_export:
+      - endpoint: "POST /system/user/export"
+        interfaceRef: API-SysUserController-export
+        permission: system:user:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+      - endpoint: "POST /system/user/importTemplate"
+        interfaceRef: API-SysUserController-importTemplate
+        permission: system:user:view
+        format: EXCEL_TEMPLATE
+        trigger: 导入弹窗内「下载模板」（权限码为推断，端点存在为事实）
+    x_sorting: "SQL 未写 order by（事实：SysUserMapper.selectUserList 无 order 子句）；排序由前端表格 sortName（createTime）/sortOrder（desc）经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_dataScope: "受 @DataScope(deptAlias=\"d\", userAlias=\"u\") 注入的 ${params.dataScope} 过滤；管理员不过滤，非管理员无匹配角色时强制 dept_id = 0（属 M3 规则模型约束，M7 不重复定义）"
+    x_timeRangeImpl: "时间范围经 to_char(create_time,'YYYYMMDD') 与 to_char(cast(? as timestamp),'YYYYMMDD') 做字符串比较，非 BETWEEN（事实）"
+
+  - id: QR-SYS-ROLE-001
+    name: 角色列表查询
+    alias: sysRoleList
+    objectType: LIST_QUERY
+    description: 按角色名称/权限字符串/状态/创建时间范围分页查询角色，并展示其数据范围
+    behaviorRef: SysRole_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysRole
+        alias: sysRole
+        primary: true
+    joins: []
+    parameters:
+      - name: roleName
+        label: 角色名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysRole.roleName
+      - name: roleKey
+        label: 权限字符
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysRole.roleKey
+      - name: status
+        label: 角色状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysRole.status
+      - name: beginTime
+        label: 创建开始时间
+        dataType: Date
+        required: false
+        allowedOperators: [GE]
+        sourceField: sysRole.createTime
+      - name: endTime
+        label: 创建结束时间
+        dataType: Date
+        required: false
+        allowedOperators: [LE]
+        sourceField: sysRole.createTime
+    conditions:
+      - conditionId: C01
+        leftExpression: sysRole.roleName
+        operator: LIKE
+        parameterRef: roleName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysRole.roleKey
+        operator: LIKE
+        parameterRef: roleKey
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysRole.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: sysRole.createTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: sysRole.createTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: roleId
+        label: 角色ID
+        dataType: Integer
+        sourceExpression: sysRole.roleId
+        aggregateFunction: NONE
+      - name: roleName
+        label: 角色名称
+        dataType: String
+        sourceExpression: sysRole.roleName
+        aggregateFunction: NONE
+      - name: roleKey
+        label: 权限字符
+        dataType: String
+        sourceExpression: sysRole.roleKey
+        aggregateFunction: NONE
+      - name: roleSort
+        label: 显示顺序
+        dataType: Integer
+        sourceExpression: sysRole.roleSort
+        aggregateFunction: NONE
+      - name: dataScope
+        label: 数据范围
+        dataType: String
+        sourceExpression: sysRole.dataScope
+        aggregateFunction: NONE
+      - name: status
+        label: 角色状态
+        dataType: String
+        sourceExpression: sysRole.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysRole.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_role
+    x_queryEndpoint: "POST /system/role/list"
+    x_interfaceRef: API-SysRoleController-list
+    x_interfacePermission: system:role:list
+    x_export:
+      - endpoint: "POST /system/role/export"
+        interfaceRef: API-SysRoleController-export
+        permission: system:role:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName=roleSort/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_timeRangeImpl: "时间范围经 to_char(create_time,'YYYYMMDD') 与 to_char(cast(? as timestamp),'YYYYMMDD') 做字符串比较，非 BETWEEN（事实）"
+
+  - id: QR-SYS-MENU-001
+    name: 菜单树列表查询
+    alias: sysMenuTreeList
+    objectType: LIST_QUERY
+    description: 按菜单名称/状态查询菜单与按钮权限树（目录 M / 菜单 C / 按钮 F 三级），用于菜单管理页的树表与新增/修改页的上级菜单选择
+    behaviorRef: SysMenu_QueryTree
+    sourceObjects:
+      - objectRef: OBJ-SysMenu
+        alias: sysMenu
+        primary: true
+    joins: []
+    parameters:
+      - name: menuName
+        label: 菜单名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysMenu.menuName
+      - name: status
+        label: 菜单状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysMenu.visible
+    conditions:
+      - conditionId: C01
+        leftExpression: sysMenu.menuName
+        operator: LIKE
+        parameterRef: menuName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysMenu.visible
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: menuId
+        label: 菜单ID
+        dataType: Integer
+        sourceExpression: sysMenu.menuId
+        aggregateFunction: NONE
+      - name: menuName
+        label: 菜单名称
+        dataType: String
+        sourceExpression: sysMenu.menuName
+        aggregateFunction: NONE
+      - name: orderNum
+        label: 显示顺序
+        dataType: Integer
+        sourceExpression: sysMenu.orderNum
+        aggregateFunction: NONE
+      - name: url
+        label: 请求地址
+        dataType: String
+        sourceExpression: sysMenu.url
+        aggregateFunction: NONE
+      - name: target
+        label: 打开方式
+        dataType: String
+        sourceExpression: sysMenu.target
+        aggregateFunction: NONE
+      - name: menuType
+        label: 菜单类型
+        dataType: String
+        sourceExpression: sysMenu.menuType
+        aggregateFunction: NONE
+      - name: visible
+        label: 菜单状态
+        dataType: String
+        sourceExpression: sysMenu.visible
+        aggregateFunction: NONE
+      - name: perms
+        label: 权限标识
+        dataType: String
+        sourceExpression: sysMenu.perms
+        aggregateFunction: NONE
+      - name: icon
+        label: 菜单图标
+        dataType: String
+        sourceExpression: sysMenu.icon
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysMenu.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: sysMenu.parentId
+        direction: ASC
+      - expression: sysMenu.orderNum
+        direction: ASC
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_menu
+    x_queryEndpoint: "POST /system/menu/list"
+    x_interfaceRef: API-SysMenuController-list
+    x_interfacePermission: system:menu:list
+    x_treeTable: true
+    x_export: []
+    x_sorting: "SQL 按 parent_id, order_num 升序返回全量树；前端树表渲染，不做服务端分页（事实：SysMenuMapper.selectMenuList 未使用 startPage，返回 List 而非 TableDataInfo）"
+    x_note: "本系统 14 个 C 类页面菜单 + 50 个 F 类按钮权限（另 7 个来自 sql/quartz.sql）均来自本表的 perms 列，见 business-architecture.md §5"
+    x_listScope: "管理员走 selectMenuList（全量菜单）；非管理员走 selectMenuListByUserId 并固定 where ur.user_id = #{params.userId}（由 SysMenuServiceImpl 按当前登录用户注入，非页面可传参数）——事实：SysMenuServiceImpl.selectMenuList"
+
+  - id: QR-SYS-DEPT-001
+    name: 部门树列表查询
+    alias: sysDeptTreeList
+    objectType: LIST_QUERY
+    description: 按部门名称/状态查询组织机构树，树形展示部门名称、排序、负责人、电话、邮箱与创建时间
+    behaviorRef: SysDept_QueryTree
+    sourceObjects:
+      - objectRef: OBJ-SysDept
+        alias: sysDept
+        primary: true
+    joins: []
+    parameters:
+      - name: deptName
+        label: 部门名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysDept.deptName
+      - name: status
+        label: 部门状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysDept.status
+    conditions:
+      - conditionId: C01
+        leftExpression: sysDept.deptName
+        operator: LIKE
+        parameterRef: deptName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysDept.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: deptId
+        label: 部门ID
+        dataType: Integer
+        sourceExpression: sysDept.deptId
+        aggregateFunction: NONE
+      - name: deptName
+        label: 部门名称
+        dataType: String
+        sourceExpression: sysDept.deptName
+        aggregateFunction: NONE
+      - name: orderNum
+        label: 显示顺序
+        dataType: Integer
+        sourceExpression: sysDept.orderNum
+        aggregateFunction: NONE
+      - name: leader
+        label: 负责人
+        dataType: String
+        sourceExpression: sysDept.leader
+        aggregateFunction: NONE
+      - name: phone
+        label: 联系电话
+        dataType: String
+        sourceExpression: sysDept.phone
+        aggregateFunction: NONE
+      - name: email
+        label: 邮箱
+        dataType: String
+        sourceExpression: sysDept.email
+        aggregateFunction: NONE
+      - name: status
+        label: 部门状态
+        dataType: String
+        sourceExpression: sysDept.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysDept.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: sysDept.parentId
+        direction: ASC
+      - expression: sysDept.orderNum
+        direction: ASC
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_dept
+    x_queryEndpoint: "POST /system/dept/list"
+    x_interfaceRef: API-SysDeptController-list
+    x_interfacePermission: system:dept:list
+    x_treeTable: true
+    x_export: []
+    x_sorting: "SQL 按 parent_id, order_num 升序返回全量树；前端树表渲染，不做服务端分页（事实：SysDeptMapper.selectDeptList 未使用 startPage）"
+    x_dataScope: "受 @DataScope(deptAlias=\"d\") 注入的 ${params.dataScope} 过滤（事实：SysDeptServiceImpl.selectDeptList）"
+
+  - id: QR-SYS-POST-001
+    name: 岗位列表查询
+    alias: sysPostList
+    objectType: LIST_QUERY
+    description: 按岗位编码/岗位名称/状态查询岗位定义
+    behaviorRef: SysPost_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysPost
+        alias: sysPost
+        primary: true
+    joins: []
+    parameters:
+      - name: postCode
+        label: 岗位编码
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysPost.postCode
+      - name: postName
+        label: 岗位名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysPost.postName
+      - name: status
+        label: 状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysPost.status
+    conditions:
+      - conditionId: C01
+        leftExpression: sysPost.postCode
+        operator: LIKE
+        parameterRef: postCode
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysPost.postName
+        operator: LIKE
+        parameterRef: postName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysPost.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: postId
+        label: 岗位ID
+        dataType: Integer
+        sourceExpression: sysPost.postId
+        aggregateFunction: NONE
+      - name: postCode
+        label: 岗位编码
+        dataType: String
+        sourceExpression: sysPost.postCode
+        aggregateFunction: NONE
+      - name: postName
+        label: 岗位名称
+        dataType: String
+        sourceExpression: sysPost.postName
+        aggregateFunction: NONE
+      - name: postSort
+        label: 显示顺序
+        dataType: Integer
+        sourceExpression: sysPost.postSort
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: String
+        sourceExpression: sysPost.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysPost.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_post
+    x_queryEndpoint: "POST /system/post/list"
+    x_interfaceRef: API-SysPostController-list
+    x_interfacePermission: system:post:list
+    x_export:
+      - endpoint: "POST /system/post/export"
+        interfaceRef: API-SysPostController-export
+        permission: system:post:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName=postSort/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+
+  # ---------------------------------------------------------------------------
+  # 二、系统管理域 — 字典与参数
+  # ---------------------------------------------------------------------------
+
+  - id: QR-SYS-DICTTYPE-001
+    name: 字典类型列表查询
+    alias: sysDictTypeList
+    objectType: LIST_QUERY
+    description: 按字典名称/字典类型/状态/创建时间范围分页查询字典类型；字典管理页左栏数据源
+    behaviorRef: SysDictType_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysDictType
+        alias: sysDictType
+        primary: true
+    joins: []
+    parameters:
+      - name: dictName
+        label: 字典名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysDictType.dictName
+      - name: dictType
+        label: 字典类型
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysDictType.dictType
+      - name: status
+        label: 状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysDictType.status
+      - name: beginTime
+        label: 创建开始时间
+        dataType: Date
+        required: false
+        allowedOperators: [GE]
+        sourceField: sysDictType.createTime
+      - name: endTime
+        label: 创建结束时间
+        dataType: Date
+        required: false
+        allowedOperators: [LE]
+        sourceField: sysDictType.createTime
+    conditions:
+      - conditionId: C01
+        leftExpression: sysDictType.dictName
+        operator: LIKE
+        parameterRef: dictName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysDictType.dictType
+        operator: LIKE
+        parameterRef: dictType
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysDictType.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: sysDictType.createTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: sysDictType.createTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: dictId
+        label: 字典主键
+        dataType: Integer
+        sourceExpression: sysDictType.dictId
+        aggregateFunction: NONE
+      - name: dictName
+        label: 字典名称
+        dataType: String
+        sourceExpression: sysDictType.dictName
+        aggregateFunction: NONE
+      - name: dictType
+        label: 字典类型
+        dataType: String
+        sourceExpression: sysDictType.dictType
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: String
+        sourceExpression: sysDictType.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysDictType.createTime
+        aggregateFunction: NONE
+      - name: remark
+        label: 备注
+        dataType: String
+        sourceExpression: sysDictType.remark
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_dict_type
+    x_queryEndpoint: "POST /system/dict/list"
+    x_interfaceRef: API-SysDictTypeController-list
+    x_interfacePermission: "system:dict:view（接口节点事实；菜单按钮权限 system:dict:list 亦覆盖本端点）"
+    x_export:
+      - endpoint: "POST /system/dict/export"
+        interfaceRef: API-SysDictTypeController-export
+        permission: system:dict:export
+        format: EXCEL
+        trigger: 字典类型列表导出按钮
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName=dictId（asc）/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_timeRangeImpl: "时间范围经 to_char(create_time,'YYYYMMDD') 与 to_char(cast(? as timestamp),'YYYYMMDD') 做字符串比较，非 BETWEEN（事实）"
+    x_remarkCaveat: "结果列 remark 虽在 SQL 的 selectXxxVo 中被选出，但对应 resultMap 未映射该列，实体属性恒为 null（事实：SysDictTypeMapper/SysDictDataMapper/SysConfigMapper 的 resultMap）"
+
+
+  - id: QR-SYS-DICTDATA-001
+    name: 字典数据列表查询
+    alias: sysDictDataList
+    objectType: LIST_QUERY
+    description: 按字典类型 + 字典标签/状态分页查询字典数据项；字典管理页右栏数据源，也是本系统所有字典下拉框（COMBO）的取值来源
+    behaviorRef: SysDictData_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysDictData
+        alias: sysDictData
+        primary: true
+    joins: []
+    parameters:
+      - name: dictType
+        label: 字典类型
+        dataType: String
+        required: true
+        allowedOperators: [EQ]
+        sourceField: sysDictData.dictType
+      - name: dictLabel
+        label: 字典标签
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysDictData.dictLabel
+      - name: status
+        label: 状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysDictData.status
+    conditions:
+      - conditionId: C01
+        leftExpression: sysDictData.dictType
+        operator: EQ
+        parameterRef: dictType
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: false
+      - conditionId: C02
+        leftExpression: sysDictData.dictLabel
+        operator: LIKE
+        parameterRef: dictLabel
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysDictData.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: dictCode
+        label: 字典编码
+        dataType: Integer
+        sourceExpression: sysDictData.dictCode
+        aggregateFunction: NONE
+      - name: dictSort
+        label: 字典排序
+        dataType: Integer
+        sourceExpression: sysDictData.dictSort
+        aggregateFunction: NONE
+      - name: dictLabel
+        label: 字典标签
+        dataType: String
+        sourceExpression: sysDictData.dictLabel
+        aggregateFunction: NONE
+      - name: dictValue
+        label: 字典键值
+        dataType: String
+        sourceExpression: sysDictData.dictValue
+        aggregateFunction: NONE
+      - name: dictType
+        label: 字典类型
+        dataType: String
+        sourceExpression: sysDictData.dictType
+        aggregateFunction: NONE
+      - name: cssClass
+        label: 样式属性
+        dataType: String
+        sourceExpression: sysDictData.cssClass
+        aggregateFunction: NONE
+      - name: listClass
+        label: 表格回显样式
+        dataType: String
+        sourceExpression: sysDictData.listClass
+        aggregateFunction: NONE
+      - name: isDefault
+        label: 是否默认
+        dataType: String
+        sourceExpression: sysDictData.isDefault
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: String
+        sourceExpression: sysDictData.status
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysDictData.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: sysDictData.dictSort
+        direction: ASC
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_dict_data
+    x_queryEndpoint: "POST /system/dict/data/list"
+    x_interfaceRef: API-SysDictDataController-list
+    x_interfacePermission: system:dict:list
+    x_export:
+      - endpoint: "POST /system/dict/data/export"
+        interfaceRef: API-SysDictDataController-export
+        permission: system:dict:export
+        format: EXCEL
+        trigger: 字典数据列表导出按钮
+    x_sorting: "SQL 按 dict_sort 升序返回"
+    x_remarkCaveat: "结果列 remark 虽在 SQL 的 selectXxxVo 中被选出，但对应 resultMap 未映射该列，实体属性恒为 null（事实：SysDictTypeMapper/SysDictDataMapper/SysConfigMapper 的 resultMap）"
+
+
+  - id: QR-SYS-CONFIG-001
+    name: 参数列表查询
+    alias: sysConfigList
+    objectType: LIST_QUERY
+    description: 按参数名称/参数键名/系统内置标记/创建时间范围分页查询平台运行期参数
+    behaviorRef: SysConfig_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysConfig
+        alias: sysConfig
+        primary: true
+    joins: []
+    parameters:
+      - name: configName
+        label: 参数名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysConfig.configName
+      - name: configKey
+        label: 参数键名
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysConfig.configKey
+      - name: configType
+        label: 系统内置
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysConfig.configType
+      - name: beginTime
+        label: 创建开始时间
+        dataType: Date
+        required: false
+        allowedOperators: [GE]
+        sourceField: sysConfig.createTime
+      - name: endTime
+        label: 创建结束时间
+        dataType: Date
+        required: false
+        allowedOperators: [LE]
+        sourceField: sysConfig.createTime
+    conditions:
+      - conditionId: C01
+        leftExpression: sysConfig.configName
+        operator: LIKE
+        parameterRef: configName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysConfig.configKey
+        operator: LIKE
+        parameterRef: configKey
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysConfig.configType
+        operator: EQ
+        parameterRef: configType
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: sysConfig.createTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: sysConfig.createTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: configId
+        label: 参数主键
+        dataType: Integer
+        sourceExpression: sysConfig.configId
+        aggregateFunction: NONE
+      - name: configName
+        label: 参数名称
+        dataType: String
+        sourceExpression: sysConfig.configName
+        aggregateFunction: NONE
+      - name: configKey
+        label: 参数键名
+        dataType: String
+        sourceExpression: sysConfig.configKey
+        aggregateFunction: NONE
+      - name: configValue
+        label: 参数键值
+        dataType: String
+        sourceExpression: sysConfig.configValue
+        aggregateFunction: NONE
+      - name: configType
+        label: 系统内置
+        dataType: String
+        sourceExpression: sysConfig.configType
+        aggregateFunction: NONE
+      - name: createBy
+        label: 创建者
+        dataType: String
+        sourceExpression: sysConfig.createBy
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysConfig.createTime
+        aggregateFunction: NONE
+      - name: remark
+        label: 备注
+        dataType: String
+        sourceExpression: sysConfig.remark
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_config
+    x_queryEndpoint: "POST /system/config/list"
+    x_interfaceRef: API-SysConfigController-list
+    x_interfacePermission: system:config:list
+    x_export:
+      - endpoint: "POST /system/config/export"
+        interfaceRef: API-SysConfigController-export
+        permission: system:config:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName=configId（asc）/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_timeRangeImpl: "时间范围经 to_char(create_time,'YYYYMMDD') 与 to_char(cast(? as timestamp),'YYYYMMDD') 做字符串比较，非 BETWEEN（事实）"
+
+  # ---------------------------------------------------------------------------
+  # 三、系统管理域 — 通知公告
+  # ---------------------------------------------------------------------------
+    x_remarkCaveat: "结果列 remark 虽在 SQL 的 selectXxxVo 中被选出，但对应 resultMap 未映射该列，实体属性恒为 null（事实：SysDictTypeMapper/SysDictDataMapper/SysConfigMapper 的 resultMap）"
+
+
+  - id: QR-SYS-NOTICE-001
+    name: 通知公告列表查询
+    alias: sysNoticeList
+    objectType: LIST_QUERY
+    description: 按公告标题/操作人/公告类型分页查询通知公告
+    behaviorRef: SysNotice_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysNotice
+        alias: sysNotice
+        primary: true
+    joins: []
+    parameters:
+      - name: noticeTitle
+        label: 公告标题
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysNotice.noticeTitle
+      - name: createBy
+        label: 操作人
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysNotice.createBy
+      - name: noticeType
+        label: 公告类型
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysNotice.noticeType
+    conditions:
+      - conditionId: C01
+        leftExpression: sysNotice.noticeTitle
+        operator: LIKE
+        parameterRef: noticeTitle
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysNotice.createBy
+        operator: LIKE
+        parameterRef: createBy
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysNotice.noticeType
+        operator: EQ
+        parameterRef: noticeType
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: noticeId
+        label: 公告ID
+        dataType: Integer
+        sourceExpression: sysNotice.noticeId
+        aggregateFunction: NONE
+      - name: noticeTitle
+        label: 公告标题
+        dataType: String
+        sourceExpression: sysNotice.noticeTitle
+        aggregateFunction: NONE
+      - name: noticeType
+        label: 公告类型
+        dataType: String
+        sourceExpression: sysNotice.noticeType
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: String
+        sourceExpression: sysNotice.status
+        aggregateFunction: NONE
+      - name: createBy
+        label: 创建者
+        dataType: String
+        sourceExpression: sysNotice.createBy
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: sysNotice.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_notice
+    x_queryEndpoint: "POST /system/notice/list"
+    x_interfaceRef: API-SysNoticeController-list
+    x_interfacePermission: system:notice:list
+    x_export: []
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_note: "公告详情经「查看」打开 GET /system/notice/view/{noticeId} 独立视图，不属查询报表"
+
+  # ---------------------------------------------------------------------------
+  # 四、调度任务域
+  # ---------------------------------------------------------------------------
+
+  - id: QR-JOB-001
+    name: 定时任务列表查询
+    alias: sysJobList
+    objectType: LIST_QUERY
+    description: 按任务名称/任务分组/任务状态分页查询 Quartz 定时任务定义（含调度类型、调用目标、Cron 表达式、错过策略与并发标记）
+    behaviorRef: SysJob_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysJob
+        alias: sysJob
+        primary: true
+    joins: []
+    parameters:
+      - name: jobName
+        label: 任务名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysJob.jobName
+      - name: jobGroup
+        label: 任务组名
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysJob.jobGroup
+      - name: status
+        label: 任务状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysJob.status
+    conditions:
+      - conditionId: C01
+        leftExpression: sysJob.jobName
+        operator: LIKE
+        parameterRef: jobName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysJob.jobGroup
+        operator: EQ
+        parameterRef: jobGroup
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysJob.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: jobId
+        label: 任务ID
+        dataType: Integer
+        sourceExpression: sysJob.jobId
+        aggregateFunction: NONE
+      - name: jobName
+        label: 任务名称
+        dataType: String
+        sourceExpression: sysJob.jobName
+        aggregateFunction: NONE
+      - name: jobGroup
+        label: 任务组名
+        dataType: String
+        sourceExpression: sysJob.jobGroup
+        aggregateFunction: NONE
+      - name: jobType
+        label: 调度类型
+        dataType: String
+        sourceExpression: sysJob.jobType
+        aggregateFunction: NONE
+      - name: invokeTarget
+        label: 调用目标字符串
+        dataType: String
+        sourceExpression: sysJob.invokeTarget
+        aggregateFunction: NONE
+      - name: cronExpression
+        label: cron执行表达式
+        dataType: String
+        sourceExpression: sysJob.cronExpression
+        aggregateFunction: NONE
+      - name: misfirePolicy
+        label: 计划执行错误策略
+        dataType: String
+        sourceExpression: sysJob.misfirePolicy
+        aggregateFunction: NONE
+      - name: concurrent
+        label: 是否并发执行
+        dataType: String
+        sourceExpression: sysJob.concurrent
+        aggregateFunction: NONE
+      - name: status
+        label: 任务状态
+        dataType: String
+        sourceExpression: sysJob.status
+        aggregateFunction: NONE
+      - name: remark
+        label: 备注信息
+        dataType: String
+        sourceExpression: sysJob.remark
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy: []
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_job
+    x_queryEndpoint: "POST /monitor/job/list"
+    x_interfaceRef: API-SysJobController-list
+    x_interfacePermission: monitor:job:list
+    x_export:
+      - endpoint: "POST /monitor/job/export"
+        interfaceRef: API-SysJobController-export
+        permission: monitor:job:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+    x_sorting: "SQL 未写 order by（事实：对应 Mapper 的 selectXxxList 无 order 子句）；排序由前端表格 sortName=createTime（desc）/sortOrder 经 PageHelper 的 orderByColumn/isAsc 参数注入"
+    x_note: "任务定义的运行期调度元数据由 Quartz 持久化在 11 张 QRTZ_* 表（见 database-model.md），不属本报表结果列"
+
+  - id: QR-JOBLOG-001
+    name: 调度日志列表查询
+    alias: sysJobLogList
+    objectType: LIST_QUERY
+    description: 按任务名称/任务组名/执行状态/执行时间范围分页查询定时任务执行日志
+    behaviorRef: SysJobLog_QueryList
+    sourceObjects:
+      - objectRef: OBJ-SysJobLog
+        alias: sysJobLog
+        primary: true
+    joins: []
+    parameters:
+      - name: jobName
+        label: 任务名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: sysJobLog.jobName
+      - name: jobGroup
+        label: 任务组名
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysJobLog.jobGroup
+      - name: status
+        label: 执行状态
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: sysJobLog.status
+      - name: beginTime
+        label: 执行开始时间
+        dataType: Date
+        required: false
+        allowedOperators: [GE]
+        sourceField: sysJobLog.createTime
+      - name: endTime
+        label: 执行结束时间
+        dataType: Date
+        required: false
+        allowedOperators: [LE]
+        sourceField: sysJobLog.createTime
+    conditions:
+      - conditionId: C01
+        leftExpression: sysJobLog.jobName
+        operator: LIKE
+        parameterRef: jobName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: sysJobLog.jobGroup
+        operator: EQ
+        parameterRef: jobGroup
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: sysJobLog.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: sysJobLog.createTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: sysJobLog.createTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: jobLogId
+        label: 任务日志ID
+        dataType: Integer
+        sourceExpression: sysJobLog.jobLogId
+        aggregateFunction: NONE
+      - name: jobName
+        label: 任务名称
+        dataType: String
+        sourceExpression: sysJobLog.jobName
+        aggregateFunction: NONE
+      - name: jobGroup
+        label: 任务组名
+        dataType: String
+        sourceExpression: sysJobLog.jobGroup
+        aggregateFunction: NONE
+      - name: invokeTarget
+        label: 调用目标字符串
+        dataType: String
+        sourceExpression: sysJobLog.invokeTarget
+        aggregateFunction: NONE
+      - name: jobMessage
+        label: 日志信息
+        dataType: String
+        sourceExpression: sysJobLog.jobMessage
+        aggregateFunction: NONE
+      - name: status
+        label: 执行状态
+        dataType: String
+        sourceExpression: sysJobLog.status
+        aggregateFunction: NONE
+      - name: exceptionInfo
+        label: 异常信息
+        dataType: String
+        sourceExpression: sysJobLog.exceptionInfo
+        aggregateFunction: NONE
+      - name: createTime
+        label: 执行时间
+        dataType: DateTime
+        sourceExpression: sysJobLog.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: sysJobLog.createTime
+        direction: DESC
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - sys_job_log
+    x_queryEndpoint: "POST /monitor/jobLog/list"
+    x_interfaceRef: API-SysJobLogController-list
+    x_interfacePermission: monitor:job:list
+    x_export:
+      - endpoint: "POST /monitor/jobLog/export"
+        interfaceRef: API-SysJobLogController-export
+        permission: monitor:job:export
+        format: EXCEL
+        trigger: 查询结果表格导出按钮
+    x_maintenance:
+      - endpoint: "POST /monitor/jobLog/clean"
+        interfaceRef: API-SysJobLogController-clean
+        permission: monitor:job:remove
+        purpose: 清空调度日志（写操作，非查询）
+      - endpoint: "POST /monitor/jobLog/remove"
+        interfaceRef: API-SysJobLogController-remove
+        permission: monitor:job:remove
+        purpose: 按日志ID批量删除（写操作，非查询）
+    x_sorting: "SQL 按 create_time 降序返回（RuoYi 4.7.9 起「定时任务日志默认按时间排序」）"
+    x_timeRangeImpl: "时间范围经 to_char(create_time,'YYYYMMDD') 与 to_char(cast(? as timestamp),'YYYYMMDD') 做字符串比较，非 BETWEEN（事实）"
+
+  # ---------------------------------------------------------------------------
+  # 五、OpenAPI 开放平台域
+  # ---------------------------------------------------------------------------
+
+  - id: QR-OPEN-APP-001
+    name: 开放应用列表查询
+    alias: openAppList
+    objectType: LIST_QUERY
+    description: 按应用名称/appKey/启用状态查询第三方接入应用，含密钥、联系人、有效期
+    behaviorRef: OpenApp_QueryList
+    sourceObjects:
+      - objectRef: OBJ-OpenApp
+        alias: openApp
+        primary: true
+    joins: []
+    parameters:
+      - name: appName
+        label: 应用名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: openApp.appName
+      - name: appKey
+        label: appKey
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: openApp.appKey
+      - name: status
+        label: 状态
+        dataType: Integer
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openApp.status
+    conditions:
+      - conditionId: C01
+        leftExpression: openApp.appName
+        operator: LIKE
+        parameterRef: appName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: openApp.appKey
+        operator: LIKE
+        parameterRef: appKey
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: openApp.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: id
+        label: ID
+        dataType: Integer
+        sourceExpression: openApp.sId
+        aggregateFunction: NONE
+      - name: appName
+        label: 应用名称
+        dataType: String
+        sourceExpression: openApp.appName
+        aggregateFunction: NONE
+      - name: appKey
+        label: AppKey
+        dataType: String
+        sourceExpression: openApp.appKey
+        aggregateFunction: NONE
+      - name: contact
+        label: 联系人
+        dataType: String
+        sourceExpression: openApp.contact
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: Integer
+        sourceExpression: openApp.status
+        aggregateFunction: NONE
+      - name: expireTime
+        label: 过期时间
+        dataType: DateTime
+        sourceExpression: openApp.expireTime
+        aggregateFunction: NONE
+      - name: createTime
+        label: 创建时间
+        dataType: DateTime
+        sourceExpression: openApp.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openApp.sId
+        direction: DESC
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_app
+    x_queryEndpoint: "POST /admin/open/app/list"
+    x_interfaceRef: API-OpenAppController-list
+    x_interfacePermission: "无独立权限码（仅 Shiro 会话认证）——属 Q-79-endpoints-without-permission 权限覆盖缺口；菜单权限码 open:app:view 由模板页面入口承载"
+    x_export: []
+    x_sorting: "SQL 按 s_id 降序返回（事实：OpenManageService.selectAppList 末句 order by s_id desc）"
+    x_queryImpl: "com.qvsu.open.service.OpenManageService.selectAppList（JdbcTemplate 直写 SQL，非 MyBatis Mapper）"
+
+  - id: QR-OPEN-API-001
+    name: 开放接口列表查询
+    alias: openApiList
+    objectType: LIST_QUERY
+    description: 按接口名称/开放路径/启用状态查询对外开放接口定义，含目标地址、超时、是否签名
+    behaviorRef: OpenApi_QueryList
+    sourceObjects:
+      - objectRef: OBJ-OpenApi
+        alias: openApi
+        primary: true
+    joins: []
+    parameters:
+      - name: apiName
+        label: 接口名称
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: openApi.apiName
+      - name: apiPath
+        label: 开放路径
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: openApi.apiPath
+      - name: status
+        label: 状态
+        dataType: Integer
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openApi.status
+    conditions:
+      - conditionId: C01
+        leftExpression: openApi.apiName
+        operator: LIKE
+        parameterRef: apiName
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: openApi.apiPath
+        operator: LIKE
+        parameterRef: apiPath
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: openApi.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: id
+        label: ID
+        dataType: Integer
+        sourceExpression: openApi.sId
+        aggregateFunction: NONE
+      - name: apiName
+        label: 接口名称
+        dataType: String
+        sourceExpression: openApi.apiName
+        aggregateFunction: NONE
+      - name: apiPath
+        label: 开放路径
+        dataType: String
+        sourceExpression: openApi.apiPath
+        aggregateFunction: NONE
+      - name: method
+        label: 方法
+        dataType: String
+        sourceExpression: openApi.method
+        aggregateFunction: NONE
+      - name: targetUrl
+        label: 目标地址
+        dataType: String
+        sourceExpression: openApi.targetUrl
+        aggregateFunction: NONE
+      - name: timeoutMs
+        label: 超时(ms)
+        dataType: Integer
+        sourceExpression: openApi.timeoutMs
+        aggregateFunction: NONE
+      - name: needSign
+        label: 签名
+        dataType: Integer
+        sourceExpression: openApi.needSign
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: Integer
+        sourceExpression: openApi.status
+        aggregateFunction: NONE
+      - name: curlExample
+        label: 请求示例(cURL)
+        dataType: String
+        sourceExpression: "OPEN_API_CURL_EXAMPLE_ACTION"
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openApi.sId
+        direction: DESC
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_api
+    x_queryEndpoint: "POST /admin/open/api/list"
+    x_interfaceRef: API-OpenApiMgrController-list
+    x_interfacePermission: "无独立权限码（仅 Shiro 会话认证）——属 Q-79-endpoints-without-permission 权限覆盖缺口；菜单权限码 open:api:view"
+    x_export: []
+    x_sorting: "SQL 按 s_id 降序返回（事实：OpenManageService.selectApiList 末句 order by s_id desc）"
+    x_note: "结果列 curlExample 非物理列，由行内「查看」按钮触发 GET /admin/open/api/curl/{id} 生成，属计算列（事实：templates/open/api/index.html showCurl）"
+
+  - id: QR-OPEN-LOG-001
+    name: 开放调用日志列表查询
+    alias: openCallLogList
+    objectType: LIST_QUERY
+    description: 按 traceId/appKey/API路径/调用结果/调用时间范围分页查询开放接口调用流水，含耗时、响应码与状态徽章
+    behaviorRef: OpenCallLog_QueryList
+    sourceObjects:
+      - objectRef: OBJ-OpenCallLog
+        alias: openCallLog
+        primary: true
+    joins: []
+    parameters:
+      - name: traceId
+        label: traceId
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openCallLog.traceId
+      - name: appKey
+        label: appKey
+        dataType: String
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openCallLog.appKey
+      - name: apiPath
+        label: API路径
+        dataType: String
+        required: false
+        allowedOperators: [LIKE]
+        sourceField: openCallLog.apiPath
+      - name: status
+        label: 状态
+        dataType: Integer
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openCallLog.status
+      - name: beginTime
+        label: 调用开始时间
+        dataType: DateTime
+        required: false
+        allowedOperators: [GE]
+        sourceField: openCallLog.callTime
+      - name: endTime
+        label: 调用结束时间
+        dataType: DateTime
+        required: false
+        allowedOperators: [LE]
+        sourceField: openCallLog.callTime
+    conditions:
+      - conditionId: C01
+        leftExpression: openCallLog.traceId
+        operator: EQ
+        parameterRef: traceId
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C02
+        leftExpression: openCallLog.appKey
+        operator: EQ
+        parameterRef: appKey
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C03
+        leftExpression: openCallLog.apiPath
+        operator: LIKE
+        parameterRef: apiPath
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C04
+        leftExpression: openCallLog.status
+        operator: EQ
+        parameterRef: status
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C05
+        leftExpression: openCallLog.callTime
+        operator: GE
+        parameterRef: beginTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+      - conditionId: C06
+        leftExpression: openCallLog.callTime
+        operator: LE
+        parameterRef: endTime
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: traceId
+        label: TraceId
+        dataType: String
+        sourceExpression: openCallLog.traceId
+        aggregateFunction: NONE
+      - name: appKey
+        label: AppKey
+        dataType: String
+        sourceExpression: openCallLog.appKey
+        aggregateFunction: NONE
+      - name: appName
+        label: 应用名称
+        dataType: String
+        sourceExpression: openCallLog.appName
+        aggregateFunction: NONE
+      - name: apiPath
+        label: API路径
+        dataType: String
+        sourceExpression: openCallLog.apiPath
+        aggregateFunction: NONE
+      - name: method
+        label: 方法
+        dataType: String
+        sourceExpression: openCallLog.method
+        aggregateFunction: NONE
+      - name: respCode
+        label: HTTP码
+        dataType: Integer
+        sourceExpression: openCallLog.respCode
+        aggregateFunction: NONE
+      - name: costMs
+        label: 耗时(ms)
+        dataType: Integer
+        sourceExpression: openCallLog.costMs
+        aggregateFunction: NONE
+        format: "0"
+      - name: status
+        label: 状态
+        dataType: Integer
+        sourceExpression: openCallLog.status
+        aggregateFunction: NONE
+      - name: callTime
+        label: 调用时间
+        dataType: DateTime
+        sourceExpression: openCallLog.callTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openCallLog.sId
+        direction: DESC
+    pagination:
+      enabled: true
+      defaultPageSize: 10
+      maxPageSize: 200
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_call_log
+    x_queryEndpoint: "POST /admin/open/log/list"
+    x_interfaceRef: API-OpenLogController-list
+    x_interfacePermission: "无独立权限码（仅 Shiro 会话认证）——属 Q-79-endpoints-without-permission；菜单权限码 open:log:view，按钮权限 open:log:list"
+    x_export:
+      - endpoint: "GET /admin/open/log/exportCsv"
+        interfaceRef: API-OpenLogController-exportCsv
+        permission: "无独立权限码；菜单按钮权限 open:log:list 覆盖"
+        format: CSV
+        fileNamePattern: "open-log-{yyyy-MM-dd}.csv"
+        encoding: "UTF-8 带 BOM（\\uFEFF）"
+        columns: "traceId,appKey,appName,apiPath,method,respCode,costMs,status,errorMsg,clientIp,callTime,reqBody,respBody"
+        trigger: 查询条件区「导出CSV」按钮（window.location 跳转，非 Ajax）
+    x_sorting: "SQL 按 s_id 降序返回（事实：OpenManageService.selectLogList 末句 order by s_id desc）"
+    x_detailView: "表格启用 detailView，展开行展示 clientIp、errorMsg、reqBody、respBody（事实：templates/open/log/index.html detailFormatter）"
+    x_queryImpl: "com.qvsu.open.service.OpenManageService.selectLogList（JdbcTemplate；时间范围走 params.beginTime/endTime）"
+
+  - id: QR-OPEN-LOG-002
+    name: 今日调用总览统计
+    alias: openCallLogTodayStats
+    objectType: STATISTICAL_QUERY
+    description: 统计今日（call_time::date = current_date）调用总量、成功率与平均耗时
+    behaviorRef: OpenCallLog_QueryTodayStats
+    sourceObjects:
+      - objectRef: OBJ-OpenCallLog
+        alias: openCallLog
+        primary: true
+    joins: []
+    parameters: []
+    conditions: []
+    resultColumns:
+      - name: totalCalls
+        label: 今日调用量
+        dataType: Integer
+        sourceExpression: "COUNT(1)"
+        aggregateFunction: COUNT
+      - name: successCalls
+        label: 今日成功调用量
+        dataType: Integer
+        sourceExpression: "SUM(CASE WHEN openCallLog.status = 0 THEN 1 ELSE 0 END)"
+        aggregateFunction: SUM
+      - name: successRate
+        label: 成功率
+        dataType: Decimal
+        sourceExpression: "successCalls * 100 / NULLIF(totalCalls, 0)"
+        aggregateFunction: NONE
+        format: "0.00"
+      - name: avgCost
+        label: 平均耗时(ms)
+        dataType: Decimal
+        sourceExpression: "ROUND(AVG(openCallLog.costMs)::numeric, 2)"
+        aggregateFunction: AVG
+        format: "0.00"
+    groupBy: []
+    having:
+      - expression: "openCallLog.callTime::date = current_date"
+        description: 统计口径固定为「今日」，无日期参数
+    orderBy: []
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_call_log
+    x_queryEndpoint: "GET /admin/open/log/stats"
+    x_interfaceRef: API-OpenLogController-stats
+    x_interfacePermission: "无独立权限码；菜单按钮权限 open:log:list 覆盖"
+    x_export: []
+    x_dimensions:
+      - name: 统计日期
+        sourceField: openCallLog.callTime
+        grain: DAY
+        value: "当日（current_date），不可由页面切换"
+    x_measures:
+      - name: 调用总量
+        expression: "COUNT(1)"
+        unit: 次
+      - name: 成功调用量
+        expression: "SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END)"
+        unit: 次
+      - name: 成功率
+        expression: "成功调用量 / 调用总量 * 100"
+        unit: "%"
+      - name: 平均耗时
+        expression: "AVG(cost_ms)"
+        unit: ms
+    x_queryImpl: "com.qvsu.open.service.OpenManageService.queryLogStatsToday"
+    x_presentation: "页面顶部 alert-info 横条：`今日调用量: N，成功率: N%，平均耗时: Nms`（事实：templates/open/log/index.html #statsBar）"
+
+  - id: QR-OPEN-LOG-003
+    name: 今日应用调用量排行
+    alias: openCallLogAppRanking
+    objectType: STATISTICAL_QUERY
+    description: 按应用名称统计今日调用次数并取前 5 名
+    behaviorRef: OpenCallLog_QueryAppRanking
+    sourceObjects:
+      - objectRef: OBJ-OpenCallLog
+        alias: openCallLog
+        primary: true
+    joins: []
+    parameters: []
+    conditions: []
+    resultColumns:
+      - name: appName
+        label: 应用名称
+        dataType: String
+        sourceExpression: openCallLog.appName
+        aggregateFunction: MAX
+      - name: callCount
+        label: 调用次数
+        dataType: Integer
+        sourceExpression: "COUNT(1)"
+        aggregateFunction: COUNT
+    groupBy:
+      - openCallLog.appName
+    having:
+      - expression: "openCallLog.callTime::date = current_date"
+        description: 统计口径固定为「今日」
+    orderBy:
+      - expression: callCount
+        direction: DESC
+    pagination:
+      enabled: false
+      defaultPageSize: 5
+      maxPageSize: 5
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_call_log
+    x_queryEndpoint: "GET /admin/open/log/stats"
+    x_interfaceRef: API-OpenLogController-stats
+    x_interfacePermission: "无独立权限码；菜单按钮权限 open:log:list 覆盖"
+    x_export: []
+    x_dimensions:
+      - name: 应用
+        sourceField: openCallLog.appName
+        grain: NONE
+    x_measures:
+      - name: 调用次数
+        expression: "COUNT(1)"
+        unit: 次
+    x_topN: 5
+    x_queryImpl: "com.qvsu.open.service.OpenManageService.queryLogStatsToday 的 topApps 子查询（limit 5）"
+    x_presentation: "页面顶部 alert-success 横条：`Top应用: 名称(次数)，名称(次数)`（事实：templates/open/log/index.html #topAppsBar）"
+
+  - id: QR-OPEN-DOC-001
+    name: 接口文档列表查询
+    alias: openApiDocList
+    objectType: LIST_QUERY
+    description: 查询已生成的接口文档记录（文档标题、版本号、所属应用、涉及接口ID集合、生成时间）
+    behaviorRef: OpenApiDoc_QueryList
+    sourceObjects:
+      - objectRef: OBJ-OpenApiDoc
+        alias: openApiDoc
+        primary: true
+    joins: []
+    parameters: []
+    conditions: []
+    resultColumns:
+      - name: sId
+        label: 文档ID
+        dataType: Integer
+        sourceExpression: openApiDoc.sId
+        aggregateFunction: NONE
+      - name: docTitle
+        label: 文档标题
+        dataType: String
+        sourceExpression: openApiDoc.docTitle
+        aggregateFunction: NONE
+      - name: docVersion
+        label: 文档版本
+        dataType: String
+        sourceExpression: openApiDoc.docVersion
+        aggregateFunction: NONE
+      - name: appId
+        label: 所属应用ID
+        dataType: Integer
+        sourceExpression: openApiDoc.appId
+        aggregateFunction: NONE
+      - name: apiIds
+        label: 接口ID集合
+        dataType: String
+        sourceExpression: openApiDoc.apiIds
+        aggregateFunction: NONE
+      - name: createTime
+        label: 生成时间
+        dataType: DateTime
+        sourceExpression: openApiDoc.createTime
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openApiDoc.sId
+        direction: DESC
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_api_doc
+    x_queryEndpoint: "GET /admin/open/doc/list"
+    x_interfaceRef: API-OpenDocController-list
+    x_interfacePermission: "无独立权限码（仅 Shiro 会话认证）——属 Q-79-endpoints-without-permission；菜单权限码 open:doc:view，按钮权限 open:doc:generate"
+    x_export: []
+    x_sorting: "SQL 按 s_id 降序返回，无分页、无条件过滤（事实：OpenManageService.selectDocList）"
+    x_note: "前端文档中心页面（templates/open/doc/index.html）当前并未调用本端点渲染表格；页面实际调用 GET /admin/open/doc/apis 取接口清单，并在右侧 iframe 加载 GET /admin/open/doc/html/{apiId} 预览。本报表对应端点存在且被注册为接口节点，但其界面消费方为「文档生成/下载」链路。见 MU 模型 scrOpenDoc 的说明"
+
+  # ---------------------------------------------------------------------------
+  # 六、授权关系与选项集查询（支撑页面的下拉/复选框数据源）
+  # ---------------------------------------------------------------------------
+
+  - id: QR-OPEN-AUTH-001
+    name: 应用可选接口授权关系查询
+    alias: openAuthOptions
+    objectType: LIST_QUERY
+    description: 加载启用状态的应用下拉候选集、启用状态的接口复选框候选集，以及指定应用已授权的接口ID集合
+    behaviorRef: OpenAppApi_QueryAuthOptions
+    sourceObjects:
+      - objectRef: OBJ-OpenApp
+        alias: openApp
+        primary: true
+      - objectRef: OBJ-OpenAppApi
+        alias: openAppApi
+        primary: false
+    joins:
+      - joinId: J01
+        joinType: LEFT
+        leftSource: openApp
+        rightSource: openAppApi
+        conditionExpression: "openAppApi.appId == openApp.sId"
+    parameters:
+      - name: appId
+        label: 应用
+        dataType: Integer
+        required: false
+        allowedOperators: [EQ]
+        sourceField: openAppApi.appId
+    conditions:
+      - conditionId: C01
+        leftExpression: openApp.status
+        operator: EQ
+        parameterRef: ""
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: false
+        description: "应用候选集固定过滤 status = 1（启用）"
+      - conditionId: C02
+        leftExpression: openAppApi.appId
+        operator: EQ
+        parameterRef: appId
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: true
+    resultColumns:
+      - name: id
+        label: 应用ID
+        dataType: Integer
+        sourceExpression: openApp.sId
+        aggregateFunction: NONE
+      - name: appName
+        label: 应用名称
+        dataType: String
+        sourceExpression: openApp.appName
+        aggregateFunction: NONE
+      - name: appKey
+        label: 应用标识
+        dataType: String
+        sourceExpression: openApp.appKey
+        aggregateFunction: NONE
+      - name: apiId
+        label: 已授权接口ID
+        dataType: Integer
+        sourceExpression: openAppApi.apiId
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openApp.sId
+        direction: DESC
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_app
+      - open_app_api
+    x_queryEndpoint: "GET /admin/open/auth/apps、GET /admin/open/auth/apis、GET /admin/open/auth/apiIds"
+    x_interfaceRef: API-OpenAuthController-apps
+    x_interfacePermission: "无独立权限码；菜单权限码 open:auth:view，按钮权限 open:auth:save"
+    x_export: []
+    x_sorting: "应用候选集按 s_id 降序；接口候选集按 s_id 降序（事实：OpenManageService.listAppOptions / listApiOptions）"
+    x_note: "本报表服务授权管理页的「应用下拉框 + 接口复选框矩阵」，不产出独立表格；授权保存（POST /admin/open/auth/save）为写行为，不属查询报表"
+
+  - id: QR-OPEN-SELFTEST-001
+    name: 网关自检接口清单查询
+    alias: openSelftestTargets
+    objectType: LIST_QUERY
+    description: 查询自检 httpbin 种子数据登记的开放接口定义（api_path 以 /selftest/httpbin 前缀），用于网关转发与超时能力的无外网自检
+    behaviorRef: OpenApi_QuerySelftestTargets
+    sourceObjects:
+      - objectRef: OBJ-OpenApi
+        alias: openApi
+        primary: true
+    joins: []
+    parameters:
+      - name: apiPathPrefix
+        label: 路径前缀
+        dataType: String
+        required: true
+        allowedOperators: [LIKE]
+        sourceField: openApi.apiPath
+    conditions:
+      - conditionId: C01
+        leftExpression: openApi.apiPath
+        operator: LIKE
+        parameterRef: apiPathPrefix
+        logicalConnector: AND
+        group: BASE
+        skipWhenParameterEmpty: false
+        description: "固定前缀 /selftest/httpbin"
+    resultColumns:
+      - name: apiName
+        label: 接口名称
+        dataType: String
+        sourceExpression: openApi.apiName
+        aggregateFunction: NONE
+      - name: apiPath
+        label: 开放路径
+        dataType: String
+        sourceExpression: openApi.apiPath
+        aggregateFunction: NONE
+      - name: method
+        label: HTTP方法
+        dataType: String
+        sourceExpression: openApi.method
+        aggregateFunction: NONE
+      - name: targetUrl
+        label: 目标地址
+        dataType: String
+        sourceExpression: openApi.targetUrl
+        aggregateFunction: NONE
+      - name: timeoutMs
+        label: 超时(ms)
+        dataType: Integer
+        sourceExpression: openApi.timeoutMs
+        aggregateFunction: NONE
+      - name: status
+        label: 状态
+        dataType: Integer
+        sourceExpression: openApi.status
+        aggregateFunction: NONE
+    groupBy: []
+    having: []
+    orderBy:
+      - expression: openApi.sId
+        direction: ASC
+    pagination:
+      enabled: false
+      defaultPageSize: 0
+      maxPageSize: 0
+    reportOptions: null
+    referenceSql: null
+    version: "1.0"
+    x_sourceTables:
+      - open_api
+    x_queryEndpoint: "无独立查询端点；数据由 open_api_selftest_seed.sql / open_api_httpbin_min_seed.sql 播种，运行期经 ENTRY-open-selftest 的 9 个 httpbin 端点被调用"
+    x_interfaceRef: API-OpenSelftestHttpbinController-get
+    x_interfacePermission: "anon（Shiro 白名单 /selftest/**），无权限码"
+    x_export: []
+    x_sorting: "按 s_id 升序（种子插入顺序）"
+    x_note: "本报表不供管理界面消费，仅供网关自检联调核对；列入 M7 以覆盖 FUNC-open-selftest 的读侧语义"
+
+# =============================================================================
+# 统计汇总（自检用）
+# =============================================================================
+# 本文件共建立 19 个查询报表对象：
+#   LIST_QUERY（供列表页表格消费）  15 个：QR-SYS-USER-001 / QR-SYS-ROLE-001 / QR-SYS-MENU-001 /
+#                            QR-SYS-DEPT-001 / QR-SYS-POST-001 / QR-SYS-DICTTYPE-001 /
+#                            QR-SYS-DICTDATA-001 / QR-SYS-CONFIG-001 / QR-SYS-NOTICE-001 /
+#                            QR-JOB-001 / QR-JOBLOG-001 / QR-OPEN-APP-001 / QR-OPEN-API-001 /
+#                            QR-OPEN-LOG-001 / QR-OPEN-DOC-001
+#   LIST_QUERY（支撑型选项集/清单，无独立结果表格）  2 个：QR-OPEN-AUTH-001、QR-OPEN-SELFTEST-001
+#   STATISTICAL_QUERY  2 个：QR-OPEN-LOG-002（今日调用总览）、QR-OPEN-LOG-003（今日应用调用量排行）
+#   REPORT             0 个：本系统不含固定格式业务报表页面，故无 objectType=REPORT 对象，
+#                            所有 reportOptions 均为 null（符合 M7-spec §7.6 第 7 条）。
+#
+# 覆盖的列表/统计端点（与任务给定候选清单逐条对照）：
+#   POST /system/user/list ................................ QR-SYS-USER-001
+#   POST /system/role/list ................................ QR-SYS-ROLE-001
+#   POST /system/menu/list ................................ QR-SYS-MENU-001
+#   POST /system/dept/list ................................ QR-SYS-DEPT-001
+#   POST /system/post/list ................................ QR-SYS-POST-001
+#   POST /system/dict/list ................................ QR-SYS-DICTTYPE-001
+#   POST /system/dict/data/list ........................... QR-SYS-DICTDATA-001
+#   POST /system/config/list .............................. QR-SYS-CONFIG-001
+#   POST /system/notice/list .............................. QR-SYS-NOTICE-001
+#   POST /admin/open/app/list ............................. QR-OPEN-APP-001
+#   POST /admin/open/api/list ............................. QR-OPEN-API-001
+#   POST /admin/open/log/list ............................. QR-OPEN-LOG-001
+#   GET  /admin/open/log/stats ............................ QR-OPEN-LOG-002 + QR-OPEN-LOG-003
+#   GET  /admin/open/doc/list ............................. QR-OPEN-DOC-001
+#   POST /monitor/job/list ................................ QR-JOB-001
+#   POST /monitor/jobLog/list ............................. QR-JOBLOG-001
+#   全部 16 条候选端点均有对应查询报表；额外补充 QR-OPEN-AUTH-001、QR-OPEN-SELFTEST-001 两个
+#   支撑型查询（依据 interface-index.md 的 API-OpenAuthController-apps/apis/apiIds 与
+#   API-OpenSelftestHttpbinController-* 节点）。
+#
+# 一致性门禁（留给后续 M2 编写者，规范 §7.6 第 2~3 条）：
+#   本文件 19 个 behaviorRef 与 19 个 id 严格一对一；编写 m2-behavior-model.yaml 时须为
+#   每个行为设置 behaviorType=QUERY 且 queryReportRef 指回本文件同名 id，不得增删。
+# =============================================================================

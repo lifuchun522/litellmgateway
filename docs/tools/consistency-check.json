@@ -1,0 +1,23 @@
+{
+  "files": 25,
+  "primaryDefinitions": 473,
+  "definitionInWrongFile": [],
+  "duplicateDefinitions": [],
+  "undefinedIds": [],
+  "deadLinks": [],
+  "deadAnchors": [],
+  "funcInventory": 29,
+  "funcRequirementPanels": 29,
+  "funcChains": 29,
+  "funcOnlyInInventory": [],
+  "funcOnlyInRequirements": [],
+  "funcOnlyInChains": [],
+  "incompletePanels": [],
+  "incompleteChains": [],
+  "tblInModel": 34,
+  "tblInSchema": 34,
+  "tblMissingSchema": [],
+  "tblOrphanSchema": [],
+  "nonMenuRequired": 6,
+  "nonMenuMissing": []
+}

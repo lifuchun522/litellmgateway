@@ -1,0 +1,16 @@
+﻿# Automated Meta-Model Validation
+
+- Root: `D:\src\github\litellmgateway\docs\meta-model`
+- Source Root: `D:\src\github\litellmgateway\open-api`
+- Result: **PASS**
+- ERROR: 0
+- WARNING: 0
+- INFO: 0
+- Markdown files: 25
+- Defined IDs: 473
+- Function definitions: 29
+- Source assets/tokens checked: 350
+
+## Issues
+
+No automated structural issues found.
