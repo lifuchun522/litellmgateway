@@ -48,7 +48,7 @@ query_reports:
     alias: sysUserList
     objectType: LIST_QUERY
     description: 按登录账号/手机号/状态/归属部门/创建时间范围分页查询系统用户，并按角色数据范围过滤（推断：SysUserMapper 含 dataScopeFilter）
-    behaviorRef: SysUser_QueryList
+    behaviorRef: SysUser_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysUser
         alias: sysUser
@@ -206,7 +206,7 @@ query_reports:
     alias: sysRoleList
     objectType: LIST_QUERY
     description: 按角色名称/权限字符串/状态/创建时间范围分页查询角色，并展示其数据范围
-    behaviorRef: SysRole_QueryList
+    behaviorRef: SysRole_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysRole
         alias: sysRole
@@ -563,7 +563,7 @@ query_reports:
     alias: sysPostList
     objectType: LIST_QUERY
     description: 按岗位编码/岗位名称/状态查询岗位定义
-    behaviorRef: SysPost_QueryList
+    behaviorRef: SysPost_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysPost
         alias: sysPost
@@ -673,7 +673,7 @@ query_reports:
     alias: sysDictTypeList
     objectType: LIST_QUERY
     description: 按字典名称/字典类型/状态/创建时间范围分页查询字典类型；字典管理页左栏数据源
-    behaviorRef: SysDictType_QueryList
+    behaviorRef: SysDictType_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysDictType
         alias: sysDictType
@@ -938,7 +938,7 @@ query_reports:
     alias: sysConfigList
     objectType: LIST_QUERY
     description: 按参数名称/参数键名/系统内置标记/创建时间范围分页查询平台运行期参数
-    behaviorRef: SysConfig_QueryList
+    behaviorRef: SysConfig_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysConfig
         alias: sysConfig
@@ -1087,7 +1087,7 @@ query_reports:
     alias: sysNoticeList
     objectType: LIST_QUERY
     description: 按公告标题/操作人/公告类型分页查询通知公告
-    behaviorRef: SysNotice_QueryList
+    behaviorRef: SysNotice_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysNotice
         alias: sysNotice
@@ -1193,7 +1193,7 @@ query_reports:
     alias: sysJobList
     objectType: LIST_QUERY
     description: 按任务名称/任务分组/任务状态分页查询 Quartz 定时任务定义（含调度类型、调用目标、Cron 表达式、错过策略与并发标记）
-    behaviorRef: SysJob_QueryList
+    behaviorRef: Job_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysJob
         alias: sysJob
@@ -1320,7 +1320,7 @@ query_reports:
     alias: sysJobLogList
     objectType: LIST_QUERY
     description: 按任务名称/任务组名/执行状态/执行时间范围分页查询定时任务执行日志
-    behaviorRef: SysJobLog_QueryList
+    behaviorRef: JobLog_QueryPage
     sourceObjects:
       - objectRef: OBJ-SysJobLog
         alias: sysJobLog
@@ -1478,7 +1478,7 @@ query_reports:
     alias: openAppList
     objectType: LIST_QUERY
     description: 按应用名称/appKey/启用状态查询第三方接入应用，含密钥、联系人、有效期
-    behaviorRef: OpenApp_QueryList
+    behaviorRef: OpenApp_QueryPage
     sourceObjects:
       - objectRef: OBJ-OpenApp
         alias: openApp
@@ -1587,7 +1587,7 @@ query_reports:
     alias: openApiList
     objectType: LIST_QUERY
     description: 按接口名称/开放路径/启用状态查询对外开放接口定义，含目标地址、超时、是否签名
-    behaviorRef: OpenApi_QueryList
+    behaviorRef: OpenApi_QueryPage
     sourceObjects:
       - objectRef: OBJ-OpenApi
         alias: openApi
@@ -1706,7 +1706,7 @@ query_reports:
     alias: openCallLogList
     objectType: LIST_QUERY
     description: 按 traceId/appKey/API路径/调用结果/调用时间范围分页查询开放接口调用流水，含耗时、响应码与状态徽章
-    behaviorRef: OpenCallLog_QueryList
+    behaviorRef: OpenCallLog_QueryPage
     sourceObjects:
       - objectRef: OBJ-OpenCallLog
         alias: openCallLog
@@ -1874,7 +1874,7 @@ query_reports:
     alias: openCallLogTodayStats
     objectType: STATISTICAL_QUERY
     description: 统计今日（call_time::date = current_date）调用总量、成功率与平均耗时
-    behaviorRef: OpenCallLog_QueryTodayStats
+    behaviorRef: OpenCallLog_Stats
     sourceObjects:
       - objectRef: OBJ-OpenCallLog
         alias: openCallLog
@@ -1949,7 +1949,7 @@ query_reports:
     alias: openCallLogAppRanking
     objectType: STATISTICAL_QUERY
     description: 按应用名称统计今日调用次数并取前 5 名
-    behaviorRef: OpenCallLog_QueryAppRanking
+    behaviorRef: OpenCallLog_Stats
     sourceObjects:
       - objectRef: OBJ-OpenCallLog
         alias: openCallLog
@@ -2075,7 +2075,7 @@ query_reports:
     alias: openAuthOptions
     objectType: LIST_QUERY
     description: 加载启用状态的应用下拉候选集、启用状态的接口复选框候选集，以及指定应用已授权的接口ID集合
-    behaviorRef: OpenAppApi_QueryAuthOptions
+    behaviorRef: OpenAuth_QueryMatrix
     sourceObjects:
       - objectRef: OBJ-OpenApp
         alias: openApp
@@ -2160,7 +2160,7 @@ query_reports:
     alias: openSelftestTargets
     objectType: LIST_QUERY
     description: 查询自检 httpbin 种子数据登记的开放接口定义（api_path 以 /selftest/httpbin 前缀），用于网关转发与超时能力的无外网自检
-    behaviorRef: OpenApi_QuerySelftestTargets
+    behaviorRef: OpenSelftest_VerifyChain
     sourceObjects:
       - objectRef: OBJ-OpenApi
         alias: openApi
@@ -2244,6 +2244,7 @@ query_reports:
 #                            QR-JOB-001 / QR-JOBLOG-001 / QR-OPEN-APP-001 / QR-OPEN-API-001 /
 #                            QR-OPEN-LOG-001 / QR-OPEN-DOC-001
 #   LIST_QUERY（支撑型选项集/清单，无独立结果表格）  2 个：QR-OPEN-AUTH-001、QR-OPEN-SELFTEST-001
+#                            —— 故 LIST_QUERY 合计 15 + 2 = 17 条
 #   STATISTICAL_QUERY  2 个：QR-OPEN-LOG-002（今日调用总览）、QR-OPEN-LOG-003（今日应用调用量排行）
 #   REPORT             0 个：本系统不含固定格式业务报表页面，故无 objectType=REPORT 对象，
 #                            所有 reportOptions 均为 null（符合 M7-spec §7.6 第 7 条）。

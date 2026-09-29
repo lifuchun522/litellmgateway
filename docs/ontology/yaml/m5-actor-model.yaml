@@ -1036,6 +1036,12 @@ permissions:
 #    【影响·风险链】权限码被授予普通角色但后端零校验 + /open/** 在 Shiro 中为 anon +
 #      open_api.need_sign=0 时网关跳过全部校验
 #      → 低权限登录用户即可改写 open_api 表，制造一个无需任何凭据即可对外匿名转发的入口。
+#    【元模型内部矛盾二】# 待确认——business-architecture.md §1.2 域间依赖规则表声称
+#      「开放平台域 → 系统管理域｜单向依赖。`/admin/open/**` 管理端受 `@RequiresPermissions` 约束，
+#       权限码 `open:*` 由 `sys_menu` 定义、经 `sys_role_menu` 授予角色」；
+#      但全量扫描 `com.qvsu.open` 包，字符串 `RequiresPermissions` **零命中**（连注解 import 都不存在），
+#      即该「受 @RequiresPermissions 约束」的陈述与源码不符，
+#      属把「菜单中声明的权限码」误述为「后端已强制校验」。本模型以源码为准，按「后端未校验」登记缺口。
 #
 # 3. 网关不做 Shiro 授权，改用自有八步鉴权（有意为之，非缺口，但权限语义需对齐）
 #    【现状·事实】ShiroConfig 第 333 行 /open/** -> anon，认证与授权完全由 OpenApiFilter +

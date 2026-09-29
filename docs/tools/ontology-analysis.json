@@ -1,0 +1,1774 @@
+{
+  "generatedAt": "2026-09-29T09:08:48.280Z",
+  "files": 7,
+  "definedIds": 508,
+  "totalRefs": 445,
+  "resolvedRefs": 197,
+  "unresolvedRefs": 248,
+  "byReason": {
+    "valueObjectRef 使用中文名，M1 值对象未分配 ID": 15,
+    "M5 角色/权限 ID 命名不同": 20,
+    "parameterRef 为字段名，非全局 ID": 74,
+    "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）": 12,
+    "M2 命名不同（业务级行为）": 47,
+    "M2 未建模的 UI 级动作": 80
+  },
+  "m2Behaviors": 110,
+  "m2Referenced": 83,
+  "m2Orphans": [
+    "SysUserOnline_Logout",
+    "SysCaptcha_Generate",
+    "SysUser_Register",
+    "SysIndex_ShowUnauth",
+    "SysUser_UpdateProfile",
+    "SysUser_UpdateAvatar",
+    "SysUser_Export",
+    "SysUser_Import",
+    "SysRole_Export",
+    "SysPost_Export",
+    "SysDict_CacheRefresh",
+    "SysConfig_Export",
+    "SysOperLog_QueryPage",
+    "SysOperLog_Clean",
+    "SysLogininfor_QueryPage",
+    "SysLogininfor_Clean",
+    "SysUser_Unlock",
+    "SysUserOnline_QueryPage",
+    "SysUserOnline_ForceLogout",
+    "SysUserPost_Grant",
+    "SysRoleDept_Grant",
+    "GlobalException_Handle",
+    "Job_Export",
+    "Job_Edit",
+    "Job_Remove",
+    "JobLog_Export",
+    "JobLog_Clean"
+  ],
+  "unresolved": [
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "开放平台审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "开放平台审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "开放平台审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "开放平台审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "开放平台审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m1-object-model.yaml",
+      "kind": "valueObjectRef",
+      "ref": "审计信息",
+      "why": "valueObjectRef 使用中文名，M1 值对象未分配 ID"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m6-flow-model.yaml",
+      "kind": "roleRef",
+      "ref": "ROLE-ADMIN",
+      "why": "M5 角色/权限 ID 命名不同"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "loginName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "phonenumber",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "deptId",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysUserController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysUserController-importTemplate",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "roleName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "roleKey",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysRoleController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "menuName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "deptName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "postCode",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "postName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysPostController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "dictName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "dictType",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysDictTypeController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "dictType",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "dictLabel",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysDictDataController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "configName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "configKey",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "configType",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysConfigController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "noticeTitle",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "createBy",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "noticeType",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "jobName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "jobGroup",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysJobController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "jobName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "jobGroup",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysJobLogController-export",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysJobLogController-clean",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-SysJobLogController-remove",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "appName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "appKey",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "apiName",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "apiPath",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "traceId",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "appKey",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "apiPath",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "status",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "beginTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "endTime",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "interfaceRef",
+      "ref": "API-OpenLogController-exportCsv",
+      "why": "interfaceRef 指向逆向元模型的 API-*（本体内无该命名空间）"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "appId",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "m7-report-model.yaml",
+      "kind": "parameterRef",
+      "ref": "apiPathPrefix",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysUserList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysRoleList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysMenuList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysDeptList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysPostList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysDictTypeList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysDictDataList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysConfigList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmSysNoticeList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmJobList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmJobLogList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmOpenAppList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmOpenApiList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmOpenAuth",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmOpenLogList",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmOpenDoc",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmHome",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "screenRef",
+      "ref": "frmProfile",
+      "why": "parameterRef 为字段名，非全局 ID"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysLogin_Login",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysCaptcha_RefreshImage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRegister_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRegister_Register",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysCaptcha_RefreshImage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysLogin_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_OpenResetPwd",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysIndex_SwitchSkin",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysIndex_ChangeMenuStyle",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysIndex_LockScreen",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysLogin_Logout",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_UpdateInfo",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_UpdatePwd",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_UpdateAvatar",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_QueryDeptTree",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDept_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_ImportData",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_ImportTemplate",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_QueryDetail",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_QueryMenuTree",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_QueryDeptTree",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_QueryAllocatedUser",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_SelectUser",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_CancelAuthUser",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_CancelAuthUserAll",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysMenu_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysMenu_QueryParentTree",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysMenu_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysMenu_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDept_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDept_QueryParentTree",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDept_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDept_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysPost_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysPost_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysPost_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysPost_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysPost_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictData_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_RefreshCache",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictType_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictData_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictData_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictData_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysDictData_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysConfig_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysConfig_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysConfig_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysConfig_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysConfig_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysNotice_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysNotice_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysNotice_QueryDetail",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "Notice_UploadRichImage",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysNotice_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysNotice_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_Add",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_Edit",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_Remove",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_ChangeStatus",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_RunOnce",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_QueryDetail",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_OpenCronBuilder",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_CheckCronExpression",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_Remove",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_Clean",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_ExportExcel",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_QueryDetail",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJobLog_ClosePage",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApp_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApp_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApp_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApp_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_QueryCurlExample",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_CopyCurlExample",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_SaveForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_CloseForm",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenAppApi_QueryAuthOptions",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenAppApi_SaveAuth",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenAppApi_CheckAllAuth",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenAppApi_ClearAllAuth",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenCallLog_QueryList",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenCallLog_ResetQuery",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenCallLog_QueryTodayStats",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApi_QueryDocApiList",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApiDoc_Preview",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "OpenApiDoc_FilterLocal",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysIndex_OpenPage",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysIndex_UnlockScreen",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_UpdateAvatar",
+      "why": "M2 未建模的 UI 级动作"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysProfile_CloseAvatarForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_CloseResetPwdForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_CloseAuthRoleForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysUser_CloseViewForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_CloseDetailForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_ApplyCronExpression",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_CheckCronExpression",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysJob_CloseCronBuilder",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_QueryUnallocatedUser",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_ResetUnallocatedQuery",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_AddAuthUser",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysRole_CloseSelectUserForm",
+      "why": "M2 命名不同（业务级行为）"
+    },
+    {
+      "file": "mu-ui-model.yaml",
+      "kind": "behaviorRef",
+      "ref": "SysMenu_SelectIcon",
+      "why": "M2 命名不同（业务级行为）"
+    }
+  ],
+  "validatorPrefixCollisions": [
+    {
+      "id": "AGG-OPEN-API-001",
+      "matches": "API",
+      "fragment": "API-001"
+    },
+    {
+      "id": "AGG-SYS-USER-001",
+      "matches": "SYS",
+      "fragment": "SYS-USER-001"
+    },
+    {
+      "id": "AGG-SYS-ROLE-001",
+      "matches": "SYS",
+      "fragment": "SYS-ROLE-001"
+    },
+    {
+      "id": "AGG-SYS-MENU-001",
+      "matches": "SYS",
+      "fragment": "SYS-MENU-001"
+    },
+    {
+      "id": "AGG-SYS-MENU-001",
+      "matches": "MENU",
+      "fragment": "MENU-001"
+    },
+    {
+      "id": "AGG-SYS-DEPT-001",
+      "matches": "SYS",
+      "fragment": "SYS-DEPT-001"
+    },
+    {
+      "id": "AGG-SYS-POST-001",
+      "matches": "SYS",
+      "fragment": "SYS-POST-001"
+    },
+    {
+      "id": "AGG-SYS-DICTTYPE-001",
+      "matches": "SYS",
+      "fragment": "SYS-DICTTYPE-001"
+    },
+    {
+      "id": "AGG-SYS-DICTDATA-001",
+      "matches": "SYS",
+      "fragment": "SYS-DICTDATA-001"
+    },
+    {
+      "id": "AGG-SYS-CONFIG-001",
+      "matches": "SYS",
+      "fragment": "SYS-CONFIG-001"
+    },
+    {
+      "id": "AGG-SYS-NOTICE-001",
+      "matches": "SYS",
+      "fragment": "SYS-NOTICE-001"
+    },
+    {
+      "id": "AGG-SYS-OPERLOG-001",
+      "matches": "SYS",
+      "fragment": "SYS-OPERLOG-001"
+    },
+    {
+      "id": "AGG-SYS-LOGININFOR-001",
+      "matches": "SYS",
+      "fragment": "SYS-LOGININFOR-001"
+    },
+    {
+      "id": "AGG-SYS-USERONLINE-001",
+      "matches": "SYS",
+      "fragment": "SYS-USERONLINE-001"
+    },
+    {
+      "id": "AGG-SYS-JOB-001",
+      "matches": "SYS",
+      "fragment": "SYS-JOB-001"
+    },
+    {
+      "id": "AGG-SYS-JOB-001",
+      "matches": "JOB",
+      "fragment": "JOB-001"
+    },
+    {
+      "id": "AGG-SYS-JOBLOG-001",
+      "matches": "SYS",
+      "fragment": "SYS-JOBLOG-001"
+    },
+    {
+      "id": "DICT-SYS-DB",
+      "matches": "SYS",
+      "fragment": "SYS-DB"
+    },
+    {
+      "id": "DICT-MENU-CODE",
+      "matches": "MENU",
+      "fragment": "MENU-CODE"
+    },
+    {
+      "id": "ASSOC-MENU-TREE",
+      "matches": "MENU",
+      "fragment": "MENU-TREE"
+    },
+    {
+      "id": "ASSOC-JOB-JOBLOG",
+      "matches": "JOB",
+      "fragment": "JOB-JOBLOG"
+    },
+    {
+      "id": "ASSOC-APP-API-AUTH",
+      "matches": "API",
+      "fragment": "API-AUTH"
+    },
+    {
+      "id": "RULE-UNIQUE-OPEN-API-PATH",
+      "matches": "API",
+      "fragment": "API-PATH"
+    },
+    {
+      "id": "RULE-UNIQUE-OPEN-APP-API-AUTH",
+      "matches": "API",
+      "fragment": "API-AUTH"
+    },
+    {
+      "id": "RULE-UNIQUE-MENU-NAME-SIBLING",
+      "matches": "MENU",
+      "fragment": "MENU-NAME-SIBLING"
+    },
+    {
+      "id": "RULE-UNIQUE-JOB-NAME-GROUP",
+      "matches": "JOB",
+      "fragment": "JOB-NAME-GROUP"
+    },
+    {
+      "id": "RULE-DELETE-MENU-CHILD",
+      "matches": "MENU",
+      "fragment": "MENU-CHILD"
+    },
+    {
+      "id": "RULE-DELETE-MENU-ASSIGNED",
+      "matches": "MENU",
+      "fragment": "MENU-ASSIGNED"
+    },
+    {
+      "id": "RULE-STATE-OPEN-API-GATEWAY",
+      "matches": "API",
+      "fragment": "API-GATEWAY"
+    },
+    {
+      "id": "RULE-STATE-JOB-SCHEDULE",
+      "matches": "JOB",
+      "fragment": "JOB-SCHEDULE"
+    },
+    {
+      "id": "RULE-PERM-MENU-DRIVEN",
+      "matches": "MENU",
+      "fragment": "MENU-DRIVEN"
+    },
+    {
+      "id": "RULE-GW-API-EXISTS-ENABLED",
+      "matches": "API",
+      "fragment": "API-EXISTS-ENABLED"
+    },
+    {
+      "id": "RULE-TIMEOUT-API-DEFAULT",
+      "matches": "API",
+      "fragment": "API-DEFAULT"
+    },
+    {
+      "id": "RULE-TIMEOUT-JOB-HTTP",
+      "matches": "JOB",
+      "fragment": "JOB-HTTP"
+    },
+    {
+      "id": "FLOW-QUARTZ-JOB-001",
+      "matches": "JOB",
+      "fragment": "JOB-001"
+    },
+    {
+      "id": "QR-SYS-USER-001",
+      "matches": "SYS",
+      "fragment": "SYS-USER-001"
+    },
+    {
+      "id": "QR-SYS-ROLE-001",
+      "matches": "SYS",
+      "fragment": "SYS-ROLE-001"
+    },
+    {
+      "id": "QR-SYS-MENU-001",
+      "matches": "SYS",
+      "fragment": "SYS-MENU-001"
+    },
+    {
+      "id": "QR-SYS-MENU-001",
+      "matches": "MENU",
+      "fragment": "MENU-001"
+    },
+    {
+      "id": "QR-SYS-DEPT-001",
+      "matches": "SYS",
+      "fragment": "SYS-DEPT-001"
+    },
+    {
+      "id": "QR-SYS-POST-001",
+      "matches": "SYS",
+      "fragment": "SYS-POST-001"
+    },
+    {
+      "id": "QR-SYS-DICTTYPE-001",
+      "matches": "SYS",
+      "fragment": "SYS-DICTTYPE-001"
+    },
+    {
+      "id": "QR-SYS-DICTDATA-001",
+      "matches": "SYS",
+      "fragment": "SYS-DICTDATA-001"
+    },
+    {
+      "id": "QR-SYS-CONFIG-001",
+      "matches": "SYS",
+      "fragment": "SYS-CONFIG-001"
+    },
+    {
+      "id": "QR-SYS-NOTICE-001",
+      "matches": "SYS",
+      "fragment": "SYS-NOTICE-001"
+    },
+    {
+      "id": "QR-JOB-001",
+      "matches": "JOB",
+      "fragment": "JOB-001"
+    },
+    {
+      "id": "QR-OPEN-API-001",
+      "matches": "API",
+      "fragment": "API-001"
+    }
+  ]
+}

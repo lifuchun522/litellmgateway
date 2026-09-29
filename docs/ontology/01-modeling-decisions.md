@@ -339,7 +339,7 @@ OpenApi_GatewayInvoke（COMMAND, SYSTEM, ownerEntity = OpenApi）
 
 **依据（四条独立证据）**：
 - 事实：`flow-index.md#流程总览` 的 10 条 FLOW 全部为技术/协同流，**无一条**是"提交—审批—通过/驳回"结构。
-- 事实：`functional-inventory.md#0` 的 32 个 FUNC 中**无任何**审批类功能（类型枚举只有 platform / operations / business / common-entry）。
+- 事实：`functional-inventory.md#0` 的功能清单中**无任何**审批类功能（类型枚举只有 platform / operations / business / common-entry；该清单在建模期间由 32 个减为 29 个，用途分类始终不含审批类）。
 - 事实：`domain-model.md#1` 的 33 个 OBJ 中**无审批单/审批任务/审批记录实体**。
 - 事实：`technical-architecture.md#Spring Boot 版本与依赖清单`（来源 `pom.xml`）中无 Activiti / Flowable / Camunda 依赖；`flow-index.md#未覆盖与待确认项` 亦无审批相关条目。
 

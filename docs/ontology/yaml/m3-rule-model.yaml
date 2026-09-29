@@ -2236,6 +2236,41 @@ rules:
     #       授权变更与在途请求之间存在瞬时不一致窗口 —— 属可接受的最终一致 ｜ # 推断
     # 复用点：OpenManageService / SysUserServiceImpl / SysRoleServiceImpl
 
+  - id: RULE-SILENT-FAILURE-NO-SIGNAL
+    name: 关键路径静默失败（缺口登记）
+    ruleType: RISK
+    description: 检测关键路径的异常是否被静默吞掉：当前存在 3 处空 catch 或降级返回，失败无可观测信号
+    inputParams:
+      - name: exceptionSite
+        type: String
+        sourceField: OpenApiDoc.htmlContent
+        required: true
+      - name: observable
+        type: Boolean
+        sourceField: OpenCallLog.errorMsg
+        required: false
+    outputType: Boolean
+    expression: |
+      observable == true
+    reusedBy:
+      - FUNC-open-doc-manage
+      - FUNC-open-log-query
+      - FUNC-sys-user-manage
+    version: "1.0"
+    # 作用对象与触发时机：开放文档下载、网关调用日志写入、口令散列三处路径；异常发生时（当前不可观测）
+    # 违反提示：不适用（缺口登记项）
+    # 证据（三处，均已逐条核对源码）：
+    #   ① OpenDocController.download 第 102-104 行：catch (Exception ignored) { } ——
+    #      文档下载失败时返回空响应体且不报错、不记日志，调用方无法区分「文档为空」与「下载失败」；
+    #   ② OpenApiLogService.save 第 51-54 行：写入 open_call_log 异常仅 log.error 后吞掉 ——
+    #      此时网关调用成功但审计缺失（business-architecture.md §4 SCN-open-call-log 记为
+    #      「已知的可观测性风险」）；结合 RULE-LOG-TRUNCATE-4000，该失败还会污染调用统计口径；
+    #   ③ Md5Utils.hash 异常时**返回入参原文**（静默降级为明文），见 RULE-AUTH-PWD-ENCRYPT。
+    # 风险：# 待确认——三处均为「失败无信号」，会使故障排查失去抓手（调用成功但无日志、
+    #       下载无响应、密码明文落库）；目标应统一改为「记日志 + 返回明确错误码」，
+    #       口令散列一处必须改为抛异常（安全等级最高）。
+    # 复用点：OpenDocController.download / OpenApiLogService.save / Md5Utils.hash
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 补充说明一：无审批流的现状登记
 #
@@ -2258,8 +2293,8 @@ rules:
 #   - reusedBy 引用 functional-inventory.md 的 FUNC-* 功能稳定 ID，
 #     便于沿「规则 → 功能 → 端点 → 表」继续下钻；
 #   - 规则不修改任何对象状态（规范强制），状态变更由 Controller/Service 承担；
-#   - 标注为 RISK 的 4 条规则（RULE-OPEN-COMPAT-FLAG-UNUSED、
+#   - 标注为 RISK 的 5 条规则（RULE-OPEN-COMPAT-FLAG-UNUSED、
 #     RULE-PHYSICAL-DELETE-NO-ARCHIVE、RULE-PERM-OPEN-MGMT-MISSING、
-#     RULE-IDEMPOTENT-REPEAT-SUBMIT-UNUSED）登记的是现状缺陷而非可执行校验，
+#     RULE-IDEMPOTENT-REPEAT-SUBMIT-UNUSED、RULE-SILENT-FAILURE-NO-SIGNAL）登记的是现状缺陷而非可执行校验，
 #     在实现阶段不应被翻译成阻断式校验，而应转化为治理任务。
 # ══════════════════════════════════════════════════════════════════════════════

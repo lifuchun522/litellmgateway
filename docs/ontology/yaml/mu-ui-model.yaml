@@ -2754,7 +2754,7 @@ screens:
         x_permission: system:config:export
       - actionId: actConfigRefreshCache
         name: 刷新缓存
-        behaviorRef: SysConfig_RefreshCache
+        behaviorRef: SysConfig_CacheRefresh
         actionType: BUTTON
         x_interfaceRef: API-SysConfigController-refreshCache
         x_http: "GET /system/config/refreshCache"

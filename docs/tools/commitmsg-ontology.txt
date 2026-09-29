@@ -1,0 +1,33 @@
+docs(ontology): 七模型本体建模产出 + 跨模型引用差异报告
+
+一、本体模型 YAML（docs/ontology/yaml/，7 个文件全部通过 python yaml.safe_load）
+- m1-object-model.yaml    聚合根 / 值对象 / 数据字典 / 不变性 / 聚合间关联
+- m2-behavior-model.yaml  110 个行为（命令 + 查询），含 syncTriggers 联动
+- m3-rule-model.yaml      业务规则（唯一性、逻辑删除、数据范围、鉴权重试等）
+- m5-actor-model.yaml     参与者 / 角色 / 权限（55 个权限码逐个登记）
+- m6-flow-model.yaml      10 条 COLLABORATION 协同流；经四项证据确认系统内不存在审批流
+- m7-report-model.yaml    查询统计与报表（逐报表标注数据来源表与导出能力）
+- mu-ui-model.yaml        页面 UI 模型（含 ASCII 布局与控件到接口的绑定）
+
+二、本体说明文档（docs/ontology/）
+- 00-ontology-overview.md                总览、模型间关系、与逆向结果的映射
+- 01-modeling-decisions.md               建模决策与偏差记录
+- 02-assumptions-and-open-questions.md   假设清单与待确认问题（含 Top 10）
+- 03-cross-model-gaps.md                 跨模型引用差异报告（新增）
+
+三、跨模型一致性分析工具
+- docs/tools/analyze-ontology.js      七模型的 ID / 引用 / 门禁分析
+- docs/tools/ontology-gap-report.js   由该分析渲染 03-cross-model-gaps.md
+- docs/tools/ontology-analysis.json   分析数据
+
+四、必须说明的未闭环结论（不掩盖）
+本体模型当前未通过技能一致性门禁，已如实登记：
+- 248 条跨模型引用无法解析。主因是七模型由独立建模过程产出、ID 体系不同
+  （M1 AGG-*、M2 资源_动作、M5 ROLE-*/权限码、M7 QR-*、MU 控件 id），
+  以及 M2 建成业务级行为而 MU 建到 UI 级交互（OpenPage/SaveForm/ResetQuery 等）的层级差。
+- 27 个 M2 行为未被 MU/M7 引用。
+- 另有 47 个本体 ID 与官方校验器前缀存在潜在命名冲突（如 AGG-SYS-USER-001 会被
+  解析出 SYS-USER-001）。当前不影响校验结论，因为本体目录不在
+  docs/meta-model 扫描范围内且 25 个元模型文件均未引用任何本体 ID。
+
+逆向元模型部分不受影响，仍为官方校验器 PASS / ERROR=0。

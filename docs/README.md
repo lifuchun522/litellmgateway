@@ -105,6 +105,9 @@
 | `yaml/m6-flow-model.yaml` | M6 流程模型 |
 | `yaml/m7-report-model.yaml` | M7 查询统计与报表模型 |
 | `yaml/mu-ui-model.yaml` | MU UI 模型 |
+| `03-cross-model-gaps.md` | **跨模型引用差异报告**：七模型 ID 体系不同导致的未解析引用与 M2 孤儿行为台账 |
+
+> ⚠️ **本体模型当前未通过技能的一致性门禁**：248 条跨模型引用无法解析、27 个 M2 行为未被 UI 引用。原因与收敛路径见 [`ontology/03-cross-model-gaps.md`](./ontology/03-cross-model-gaps.md)。这**不影响**逆向元模型的校验结论（`docs/meta-model` 仍为 `PASS / ERROR=0`），但本体部分不能声明为「已闭环」。
 
 ### `tools/`（可复现的提取与生成工具）
 | 文件 | 作用 |
@@ -113,8 +116,13 @@
 | `extract-semantics.ps1` | 表 DDL 字段、控制器端点、视图模板提取 → `semantics.json` |
 | `extract-menus.js` | 菜单 INSERT/UPDATE 解析（覆盖 `VALUES`、`SELECT … WHERE NOT EXISTS`、`UPDATE … SET` 三种形式）→ `menus.json` |
 | `gen-*.js` | 各元模型文档的确定性生成器 |
+| `write-crlf.js` | 统一 CRLF 写入（见 §五 第 1 条，关键） |
 | `check-consistency.js` | 独立一致性检查器（不复用官方校验器代码） |
 | `gen-consistency-report.js` | 运行双检查器并生成一致性报告 |
+| `audit-newline-integrity.ps1` | 审计每个文件在 ANSI 解码下的换行完整性（`Lost` 必须为 0） |
+| `analyze-ontology.js` | 本体七模型的 ID / 引用 / 门禁分析 → `ontology-analysis.json` |
+| `ontology-gap-report.js` | 依据上述分析渲染 `ontology/03-cross-model-gaps.md` |
+| `normalize-line-endings.js` | 把生成物批量转为 CRLF |
 
 > 提取与生成工具**以 Node.js 为主**：Windows PowerShell 5.1 在读 UTF-8、JSON 序列化与正则转义上有多个静默陷阱（见 §五），Node 版本无这些问题且结果可复现。
 
