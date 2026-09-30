@@ -3,72 +3,97 @@
   scripts/check-rename.sh 的 Windows 等价实现：换骨残留扫描。
 
 .DESCRIPTION
-  检查三类字符串（第 02 境点名最容易翻车的三处）：
-    1) 旧包名 com.qvsu
-    2) 旧配置前缀 qvsu:（yml 顶层）
-    3) 旧制品/镜像/容器标识（qvsu-openapi.jar / openapi-app / qvsu_open_api）
+  与 bash 版使用**同一套判据**。两套实现的判据不一致时，会出现「CI 挂而本机通过」
+  或反过来——本境第一次推送 CI 就正好撞上这个坑，因此这里刻意与 bash 版逐条对齐：
 
-  排除项：
-    .git / target / .reverse-work* / .smoke-out  —— 构建与隔离目录
-    docs/ openspec/                              —— 第 01 境逆向产物记录的是换骨前路径，属历史证据
-    open-api.zip                                 —— 0 号基线压缩包，哈希是锚点，必须原样
-    check-rename.*                               —— 脚本自身要写旧包名
+    1) 旧包名：以 `com.` 开头的标识符，后面紧跟非标识符字符
+    2) 旧配置前缀：**只在 yml/yaml/properties 里**、且**行首**就是键名
+       （因此注释行与 Java 里的文字描述不算「配置键」）
+    3) 旧产物名 / 旧镜像名 / 旧容器名
+
+  扫描对象是**纳入版本控制的文件**（`git ls-files`），不是磁盘上的所有文件：
+  这样构建产物、隔离目录、`docs/` 历史证据、压缩包里的二进制都不会污染结论。
+
+  例外（路径含以下子串时跳过）：本脚本自身、兼容期样例配置。
 
 .EXAMPLE
   & .\scripts\check-rename.ps1
 #>
-param(
-    [string]$Root = "."
-)
+param()
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
-$exts = @('.java', '.xml', '.yml', '.yaml', '.properties', '.html', '.js', '.sh', '.ps1')
-# 历史证据目录不参与扫描：docs/ 与 openspec/ 记的是换骨前的路径与行号，pages/ 是架构演示稿
-# （其数据来自换骨前的元模型，已单独在该页标注新旧包名对应关系）
-$skipDirs = @('\.git\', '\target\', '\.reverse-work', '\.reverse-work2\', '\.smoke-out\', '\docs\', '\openspec\', '\pages\')
-$skipFiles = @('open-api.zip', 'check-rename.sh', 'check-rename.ps1')
+$oldPkgRe = '(^|[^A-Za-z0-9_.])com\.qvsu([^A-Za-z0-9_]|$)'
+$oldPrefixRe = '^qvsu:'
+$oldArtifactRe = 'qvsu-openapi\.jar|openapi-app|qvsu_open_api'
 
-$files = Get-ChildItem -Path $repoRoot -Recurse -File |
-    Where-Object {
-        $p = $_.FullName
-        ($exts -contains $_.Extension.ToLower()) -and
-        ($skipFiles -notcontains $_.Name) -and
-        -not ($skipDirs | Where-Object { $p.Contains($_) })
-    }
+$allowSubstr = @('scripts/check-rename', 'application-prefixcompat.yml')
 
-Write-Host "扫描文件数：$($files.Count)"
+$skipPathRe = '^(docs/|openspec/|pages/|\.git/)'
+$skipDirRe = '(^|/)(target|node_modules|\.reverse-work2?|\.smoke-out)/'
+$skipExtRe = '\.(png|jpg|jpeg|gif|ico|zip|jar|pdf|woff2?|ttf|eot|otf)$'
+$configExtRe = '\.(ya?ml|properties)$'
 
-$checks = @(
-    @{ Name = "1/3 旧包名 com.qvsu";            Pattern = 'com\.qvsu' },
-    @{ Name = "2/3 旧配置前缀 qvsu:";            Pattern = '(?m)^qvsu:' },
-    @{ Name = "3/3 旧制品/镜像/容器标识";         Pattern = 'qvsu-openapi\.jar|openapi-app|qvsu_open_api' }
-)
+$tracked = & git ls-files
+$files = @()
+foreach ($f in $tracked) {
+    if ($f -match $skipPathRe) { continue }
+    if ($f -match $skipDirRe) { continue }
+    if ($f -match $skipExtRe) { continue }
+    $allowed = $false
+    foreach ($a in $allowSubstr) { if ($f.Contains($a)) { $allowed = $true; break } }
+    if ($allowed) { continue }
+    $files += $f
+}
+
+Write-Host "扫描纳入版本控制的文件：$($files.Count) 个"
 
 $fail = 0
-foreach ($c in $checks) {
-    Write-Host "== $($c.Name) =="
-    $hits = $files | Select-String -Pattern $c.Pattern
-    if ($hits) {
-        $fail = 1
-        $hits | Select-Object -First 20 | ForEach-Object {
-            Write-Host ("  {0}:{1}: {2}" -f $_.Path.Substring($repoRoot.Length + 1), $_.LineNumber, $_.Line.Trim())
-        }
-        if ($hits.Count -gt 20) { Write-Host "  ...（共 $($hits.Count) 处）" }
-    }
-    else {
+
+function Report-Hits([string]$Title, $Hits) {
+    Write-Host "== $Title =="
+    if (-not $Hits -or @($Hits).Count -eq 0) {
         Write-Host "  无残留"
+        return $true
     }
+    @($Hits) | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
+    if (@($Hits).Count -gt 20) { Write-Host "  ...（共 $(@($Hits).Count) 处）" }
+    return $false
+}
+
+$hits = $files | Select-String -Pattern $oldPkgRe | ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line.Trim())" }
+if (-not (Report-Hits "1/3 扫描旧包名（锚定标识符边界）" $hits)) {
+    Write-Host "换骨未完成：仍存在旧包名引用" -ForegroundColor Red
+    $fail = 1
+}
+
+$configFiles = @($files | Where-Object { $_ -match $configExtRe })
+$hits = $configFiles | Select-String -Pattern $oldPrefixRe | ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line.Trim())" }
+if (-not (Report-Hits "2/3 扫描旧配置前缀（仅配置文件的行首键名）" $hits)) {
+    Write-Host "换骨未完成：仍存在旧配置前缀" -ForegroundColor Red
+    $fail = 1
+}
+
+$hits = $files | Select-String -Pattern $oldArtifactRe | ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line.Trim())" }
+if (-not (Report-Hits "3/3 扫描旧制品/镜像/容器标识" $hits)) {
+    Write-Host "换骨未完成：仍存在旧制品/镜像标识" -ForegroundColor Red
+    $fail = 1
 }
 
 Write-Host ""
-Write-Host "说明：模块目录名 open-api/qvsu-openapi 与历史 SQL 文件名属有意保留（第 02 境不拆模块）。"
+Write-Host "  有意保留（不是漏改）："
+Write-Host "    - 模块目录名 open-api/qvsu-openapi/         第 02 境明确不拆模块、不改目录结构"
+Write-Host "    - 定时任务 Bean 名 qvsuTask                 数据库 sys_job.invoke_target 存了字符串（19 行）"
+Write-Host "    - 资源前缀 /qvsu.png 与 /qvsu/**            与 ResourcesConfig 的前缀常量成对，只改一处会 404 或绕过鉴权"
+Write-Host "    - docs/ 与 openspec/ 下的旧标识             历史证据：记录的是换骨前的路径与行号"
+Write-Host "    - application-prefixcompat.yml 的旧前缀段    兼容期验证样例，它「必须」只含旧前缀"
+Write-Host "    - pages/architecture.html 的旧包名          架构演示稿，已就地标注新旧对应关系"
 
 if ($fail -eq 0) {
+    Write-Host ""
     Write-Host "换骨残留检查通过"
     exit 0
 }
-Write-Host "换骨未完成：仍存在旧标识引用" -ForegroundColor Red
 exit 1

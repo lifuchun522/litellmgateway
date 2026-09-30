@@ -38,7 +38,7 @@ cd open-api/deploy/local-docker && docker compose up -d postgres && cd -
 cd open-api/qvsu-openapi && mvn -B -ntp package -DskipTests && cd -
 
 # 3. 启动（默认端口 5656；下面用 18080 避免与本机其它服务冲突）
-java -jar open-api/qvsu-openapi/target/qvsu-openapi.jar --server.port=18080
+java -jar open-api/qvsu-openapi/target/llm-gateway.jar --server.port=18080
 ```
 
 管理后台：`http://localhost:18080/login`，默认账号 `admin` / `admin123`。

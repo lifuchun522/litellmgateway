@@ -1,4 +1,4 @@
-# 第 02 境换骨：镜像内的产物名 qvsu-openapi.jar -> llm-gateway.jar。
+# 第 02 境换骨：镜像内的产物名由旧 Demo 的产物名改为 llm-gateway.jar。
 #
 # 原 Dockerfile 的第 14 行用 apt-get 装 tzdata，但基础镜像的 Debian 源已下线
 # （docs/reverse/gaps-and-risks.md 的 G8.1/R2 已登记），本境换成按 alpine 基础镜像 + apk 安装，
