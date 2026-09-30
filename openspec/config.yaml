@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  项目：litellmgateway（轻量级 LLM 网关）
+  底座：open-api/qvsu-openapi（Spring Boot 2.7.18 + MyBatis + Shiro + Druid + Quartz + Thymeleaf，
+        PostgreSQL/MySQL，单模块 jar，默认端口 5656）
+  教程：docs/tutorials/hunter-gateway/ 是 18 境章节文本（文章 + 视频），是需求来源。
+  推进方式：一章一个 change（chNN-*），一章一个分支（chapter/NN-*），提交信息 feat(chNN): ...
+
+rules:
+  proposal:
+    - 必须先写「明确不做（Not Do）」清单，把本章砍掉的范围记成账，不得装作已完成
+    - 引用章节文本时必须给出相对路径（docs/tutorials/hunter-gateway/chapters/NN-*/）
+    - 交付物必须能对应到代码位置（类名 / 路径 / 表名 / 脚本）
+  specs:
+    - 每条 Requirement 用 SHALL/MUST 陈述，至少两个 Scenario
+    - Scenario 用 WHEN / THEN / AND 列表式写法，THEN 必须可机械判定
+    - 涉及协议兼容的规格必须显式写明错误码与流式结束语义
+  design:
+    - 每个决定都要写「被否方案」与否定理由
+    - 必须写明本章对前序章节基线的依赖与对后续章节的接口承诺
+    - 必须写明验收口径（可执行的命令或断言）
+  tasks:
+    - 每条任务必须带验证方法（验证：...）
+    - 任务粒度不超过半天；涉及外部依赖的任务要标注离线替代方案
+
+operations:
+  apply:
+    guidance:
+      - 先跑基线编译，再改代码；每完成一条任务就标记 [x]
+      - 不得为了让测试通过而削弱既有断言
+  archive:
+    guidance:
+      - 归档前确认 openspec validate 通过，并把该章设计说明同步到 docs/design/

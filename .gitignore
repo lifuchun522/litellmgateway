@@ -22,3 +22,14 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# 逆向隔离目录（scripts/reverse 的中间解压产物，可随时删除重建）
+.reverse-work/
+.reverse-work2/
+
+# Maven 构建产物
+target/
+
+# 本地运行日志
+*.out
+logs/
