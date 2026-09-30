@@ -1,9 +1,9 @@
-name: openapi-local
+name: llmgateway-local
 
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:11}
-    container_name: openapi-postgres11
+    container_name: llmgateway-postgres11
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -27,18 +27,18 @@ services:
       retries: 20
       start_period: 45s
 
-  openapi:
+  llm-gateway:
     build:
       context: ../../
       dockerfile: deploy/local-docker/Dockerfile
-    image: openapi-app:local
-    container_name: openapi-app
+    image: llm-gateway:local
+    container_name: llm-gateway
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/opt/openapi/conf/application-docker-local.yml
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/opt/llmgateway/conf/application-docker-local.yml
       TZ: Asia/Shanghai
 
     ports:
@@ -46,5 +46,5 @@ services:
     volumes:
       - type: bind
         source: ./conf/application-docker-local.yml
-        target: /opt/openapi/conf/application-docker-local.yml
+        target: /opt/llmgateway/conf/application-docker-local.yml
         read_only: true

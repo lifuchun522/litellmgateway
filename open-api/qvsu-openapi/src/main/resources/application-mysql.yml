@@ -1,0 +1,34 @@
+# mysql profile：MySQL 8 数据源。
+# 只放数据源与日志级别，不放业务配置（业务配置一律在 application.yml）。
+# 建表脚本：open-api/deploy/local-docker/mysql/init/*.sql（按文件名顺序执行）。
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      master:
+        url: ${LLMGATEWAY_DB_URL:jdbc:mysql://localhost:3306/jd_openapi?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8}
+        username: ${LLMGATEWAY_DB_USER:root}
+        password: ${LLMGATEWAY_DB_PASSWORD:123456}
+      slave:
+        enabled: false
+      initialSize: 5
+      minIdle: 5
+      maxActive: 20
+      maxWait: 60000
+      connectTimeout: 30000
+      socketTimeout: 60000
+      validationQuery: SELECT 1
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+
+# MySQL 方言下分页插件必须换成 mysql
+pagehelper:
+  helperDialect: mysql
+
+logging:
+  level:
+    cloud.joysky.llmgateway: info
+    org.springframework: warn
