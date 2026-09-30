@@ -27,6 +27,9 @@ replay_pid*
 .reverse-work/
 .reverse-work2/
 
+# 换骨回归的临时采集目录（scripts/smoke.* 的中间产物，基线在 baseline/）
+.smoke-out/
+
 # Maven 构建产物
 target/
 

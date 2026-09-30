@@ -98,6 +98,9 @@
 | G9.2 | Shiro `rememberMe.cipherKey` 配置项存在但需人工固定（否则重启后 Cookie 解密失败） | `application.yml:116` `cipherKey:` 为空 | 中 |
 | G9.3 | 跨域未开放（浏览器直连网关会被 CORS 拦） | `ResourcesConfig` 只注册资源处理器与 `RepeatSubmitInterceptor`（`:52-66`），无 `addCorsMappings` | 中 |
 | G9.4 | 请求体/响应体明文入库（`open_call_log.req_body/resp_body` 含完整内容，可能含用户隐私） | 表结构实测 | 中 |
+| **G9.5** | **存在第二条免鉴权入口：`/selftest/**` 与 `/open/**` 同被 Shiro 置为 `anon`，但 `OpenApiFilter` 只守 `/open/`**，导致 `/selftest/httpbin/**` 的 9 个映射既不要登录也不要签名即可访问 | `framework/config/ShiroConfig.java:333-334`（`/open/**` anon、`/selftest/**` anon）与 `open/filter/OpenApiFilter.java:44`（`shouldNotFilter` 只对 `/open/` 前缀放行） | **高** |
+
+> G9.5 是第 01 境人工确认接口清单时发现的：同一段回显逻辑有两条路径可达，一条要签名（`/open/selftest/httpbin/*`），一条完全敞开（`/selftest/httpbin/*`）。第 04 境确立对外契约时必须先把这条旁路关掉，否则「鉴权」这个词在网关里不成立。
 
 ---
 
@@ -119,6 +122,8 @@
 | R12 | 低 | Shiro rememberMe `cipherKey` 未固定 | 重启后携带旧 rememberMe Cookie 访问 | Cookie 解密失败，偶发登录态异常 | 第 02 境把 cipherKey 固定为配置项 |
 | R13 | 低 | 前端品牌与项目名耦合 | 全仓检索 `qvsu` / `聚搭` | 对外呈现仍像别人的产品 | 第 02 境改名 + 残留扫描脚本 |
 | R14 | 中 | **网关自环**：`open_api` 的 8 条 selftest 记录 `target_url` 指向 `http://127.0.0.1:5656/...`，而应用 `server.port` 默认就是 5656 | 在默认端口上调用 `/open/selftest/httpbin/get` | 请求从网关打进网关自己，形成自环；压测或误配下会放大自身负载 | 第 01 境已如实登记；第 04 境确立对外契约时应把 selftest 记录改为指向独立 mock 上游 |
+| R15 | 高 | **旁路入口未鉴权**：`/selftest/**` 被 Shiro 放行且不在 `OpenApiFilter` 管辖范围内 | 未登录、无签名直接 `GET /selftest/httpbin/get` | 任何人可免鉴权调用回显接口；若该前缀被扩展成真实能力，等于全裸 | 见缺口 G9.5；第 04 境关闭该旁路或把它纳入鉴权链 |
+| R16 | 中 | **资源前缀不一致**：Shiro 放行 `/qvsu/**`，而 `ResourcesConfig` 注册的资源前缀常量仍指向该字符串 | 上传/读写资源路径调整时 | 换骨后若只改一处，静态资源会 404 或绕过鉴权 | 第 02 境换骨时把两处一起改并纳入残留扫描 |
 
 ---
 

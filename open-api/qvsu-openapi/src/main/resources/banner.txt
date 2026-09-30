@@ -1,4 +1,4 @@
-Application Version: ${qvsu.version}
+Application Version: ${llmgateway.version}
 Spring Boot Version: ${spring-boot.version}
 ////////////////////////////////////////////////////////////////////
 //                          _ooOoo_                               //

@@ -103,3 +103,24 @@ jobs:
           set -e
           git log --oneline -1 -- open-api.zip
           echo "基线包应与首个提交一致，见 docs/reverse/as-is.md 的冻结哈希"
+
+  rename-guard:
+    name: 换骨残留扫描门禁（第 02 境起）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 残留扫描
+        run: |
+          set -e
+          chmod +x scripts/check-rename.sh
+          ./scripts/check-rename.sh
+
+      - name: 回归尺子齐全性
+        run: |
+          set -e
+          test -d baseline || { echo "缺少 baseline/ 黄金快照目录"; exit 1; }
+          n=$(ls -1 baseline/*.json 2>/dev/null | wc -l)
+          echo "基线快照数：$n"
+          [ "$n" -ge 6 ] || { echo "基线快照不足 6 个"; exit 1; }
+          test -f scripts/smoke.sh || { echo "缺少 scripts/smoke.sh"; exit 1; }

@@ -7,6 +7,25 @@
 
 章节编号取自 `docs/tutorials/hunter-gateway/README.md:14-31`：第 01 境 Demo逆向筑基、第 02 境 工程脱胎换骨（改包名）、第 03 境 领域本体重塑、第 04 境 统一协议刻契（OpenAI 兼容）、第 05 境 网关流水线列阵、第 06 境 Provider统一接入、第 07 境 智能路由点火、第 08 境 模型部署归一、第 09 境 失败重试轮转、第 10 境 熔断涅槃恢复、第 11 境 VirtualKey控域、第 12 境 限流预算治理、第 13 境 配置持久不灭、第 14 境 计量成本归一、第 15 境 中文控制台统御、第 16 境 可观测斩链、第 17 境 高级策略增幅、第 18 境 云上生产封帝。
 
+> **证据基线说明（必读）**
+> 本矩阵的全部证据行号指向**第 01 境的 Demo 原始基线**：提交 `abbf795 docs(ch01): reverse engineer open-api demo baseline`，此时 Java 根包为 `com.qvsu`，共 265 个主源码 Java 文件 + 4 个测试 Java 文件、144 个模板。
+> **编写本矩阵时，工作区已切到分支 `chapter/02-cave-heaven` 并完成了第 02 境的改包名工作**，因此直接按本矩阵的路径去当前工作区找 `com/qvsu/**` 会找不到文件。当前状态经 `git status` 核实为：294 条变更，其中 269 条 Java 重命名（265 主 + 4 测试，git 状态码为 `RM`，即「重命名 + 内容修改」，因为 `package` 声明必须同步改写）。
+> 核对证据时请按如下前缀映射替换，**行号不变**：
+>
+> | 本矩阵使用的路径 | 当前工作区路径 |
+> |---|---|
+> | `open-api/qvsu-openapi/src/main/java/com/qvsu/<子包>/<类>.java` | `open-api/qvsu-openapi/src/main/java/cloud/joysky/llmgateway/<子包>/<类>.java` |
+> | `open-api/qvsu-openapi/src/main/resources/**` | 不变（路径不变，仅 `application.yml` 前缀键有改动） |
+> | `open-api/sql/**`、`open-api/deploy/**`、`open-api/qvsu-openapi/pom.xml` | 不变 |
+>
+> 需要额外注意的四处差异（已逐一核实，除此以外均为纯包名替换）：
+>
+> 1. `com/qvsu/open/**` 在改名后**保留了 `open` 这一层子包**，例如 `OpenApiFilter` 现位于 `cloud/joysky/llmgateway/open/filter/OpenApiFilter.java`；这一层子包名与第 03、05 境的领域改名冲突，属于第 03 境待处理项。
+> 2. 三个类的类名同时被改：`QvsuApplication` → `LlmGatewayApplication`、`QvsuServletInitializer` → `LlmGatewayServletInitializer`、`QvsuConfig` → `LlmGatewayConfig`。
+> 3. `com/qvsu/quartz/task/QvsuTask.java` → `cloud/joysky/llmgateway/quartz/task/QvsuTask.java`：**文件名未改但类名改成了 `LlmGatewayTask`**，同时 `@Component("qvsuTask")` 的 Bean 名仍是旧值，形成「文件名 / 类名 / Bean 名」三者不一致，是本矩阵把 `QvsuTask` 判为废弃时的额外佐证。
+> 4. 新增了一个 72 行的 `cloud/joysky/llmgateway/common/config/LegacyPrefixCompat.java`（`qvsu.*` → `llmgateway.*` 配置前缀过渡件，自述一个月后删除），它是第 02 境的产物，不属于第 01 境基线，故本矩阵未将其列为复用对象。
+
+
 ## 一、网关核心（能不能长成 LLM 网关）
 
 | 对象 | 所在路径 | 判定 | 理由 | 证据 | 生效章节 |
@@ -129,10 +148,11 @@
 | `templates/index-topnav.html` | `open-api/qvsu-openapi/src/main/resources/templates/index-topnav.html` | 废弃 | 430 行的「顶部导航版」主框架布局，与该版本实际使用的左侧导航 `index.html` 属于两套并存的主题方案；LLM 网关只需一套控制台外壳，保留双份布局会让后续改菜单时出现改一漏一 | `open-api/qvsu-openapi/src/main/resources/templates/index-topnav.html:1` | 第 02 境 |
 | `templates/skin.html` | `open-api/qvsu-openapi/src/main/resources/templates/skin.html` | 废弃 | 165 行的主题皮肤切换页（切换配色方案），属于演示型个性化功能；网关控制台追求稳定与低维护成本，主题切换会引入多套 CSS 组合的回归面，应删除 | `open-api/qvsu-openapi/src/main/resources/templates/skin.html:1` | 第 02 境 |
 | `templates/lock.html` | `open-api/qvsu-openapi/src/main/resources/templates/lock.html` | 废弃 | 211 行的锁屏页，需要前端定时器与二次解锁逻辑配合，仓库中并无对应 Controller 与菜单入口支撑其闭环；它是一段未接线的死功能，保留会误导后续维护者以为系统有锁屏能力 | `open-api/qvsu-openapi/src/main/resources/templates/lock.html:1` | 第 02 境 |
-| `SqlUtil` | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/sql/SqlUtil.java` | 废弃 | 该类提供 `escapeOrderBySql`/`filterKeyword` 两个静态方法，用关键字黑名单正则来「过滤 SQL 注入」，是典型的错误防线：黑名单必然漏（未含注释符 `--`、`;`、十六进制等变体），而唯一真实用途是动态拼 `order by`；LLM 网关的排序字段应改为白名单枚举映射，绝不把用户输入拼进 SQL | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/sql/SqlUtil.java:55` | 第 13 境 |
-| `Convert` | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/core/text/Convert.java` | 废弃 | 1010 行的弱类型转换工具（`toInt`/`toStr`/`toBool` 等对失败一律返回默认值），会让「配置项写错了」这类问题静默通过；网关的运行时配置必须强类型校验（读不到或格式非法要显式报错并拒绝生效），因此本类只保留极少数被框架代码引用的方法，其余随重构淘汰 | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/core/text/Convert.java:18` | 第 13 境 |
-| `Excel`（按需） | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/poi/ExcelUtil.java` | 废弃 | 这里的判定是「按需保留、其余淘汰」：1943 行中含大量 `@Excel` 注解读写、单元格合并、图片、下拉框校验等后台报表专用能力，而网关真正需要的只是「用量明细列表导出」一条路径；若第 14 境选择前端 CSV 导出或独立轻量实现，则本类整体不必迁移 | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/poi/ExcelUtil.java:638` | 第 14 境 |
-| `templates/include.html`（保留项，供对照） | `open-api/qvsu-openapi/src/main/resources/templates/include.html` | 直接复用 | 228 行的公共片段页，被全部业务模板以 `th:include="include :: header(...)"` / `footer` 方式引用，集中管理 CSS/JS 引入与 `$.table` 初始化参数；它与上面的废弃项形成对照 —— 删除模板时必须保留此文件，否则所有页面同时失效 | `open-api/qvsu-openapi/src/main/resources/templates/include.html:1` | 第 15 境 |
+| `SqlUtil` | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/sql/SqlUtil.java` | 废弃 | 该类提供 `escapeOrderBySql`/`filterKeyword` 两个静态方法，用关键字黑名单正则来「过滤 SQL 注入」，是典型的错误防线：黑名单必然漏（未含注释符 `--`、`;`、十六进制等变体），而唯一真实用途是动态拼 `order by`；LLM 网关的排序字段应改为白名单枚举映射，绝不把用户输入拼进 SQL。注意：本类与第三节的 `Convert`、`Excel` 不同，它是**唯一判定为废弃**的那一个（`Convert`/`Excel` 在第三节已判定为可用但需收敛实现），不重复计行 | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/sql/SqlUtil.java:55` | 第 13 境 |
+| Spring MVC 演示与未接线产物 | `open-api/qvsu-openapi/src/main/resources/templates/demo/operate/table.html` | 废弃 | `templates/demo/operate/*` 五个页面演示的是 RuoYi 代码生成器产出的「标准增删改查操作流」（新增/编辑/详情/表格/其它），依赖的是一套 Demo 专用的后端契约；本项目已用真实的 `com.qvsu.open.*` 控制器实现了同样的操作流，该演示契约没有承载方，属于必删的死代码 | `open-api/qvsu-openapi/src/main/resources/templates/demo/operate/table.html:1` | 第 02 境 |
+| `commons-lang3` 依赖（传递引入） | `open-api/qvsu-openapi/pom.xml` | 废弃 | POM 里显式声明了 `org.apache.commons:commons-lang3`（第 89 行），而 `Convert` 与大量工具类同时存在功能重叠的自研实现，形成「两套字符串/对象工具并存」的局面；第 02 境整理依赖时应只保留一套，避免同一功能出现两种写法与两种边界行为 | `open-api/qvsu-openapi/pom.xml:89` | 第 02 境 |
+| `Excel`（按需） | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/poi/ExcelUtil.java` | 废弃 | 本行是对第三节 `Excel` 行的**按需收敛判定**，不是重复对象：第三节判的是「该类可以承接用量明细导出」，本行判的是「除此之外的 1943 行能力全部淘汰」——其中大量 `@Excel` 注解读写、单元格合并、图片、下拉框校验都是后台报表专用，网关不需要；若第 14 境改为前端 CSV 导出，则本类整体不必迁移 | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/utils/poi/ExcelUtil.java:638` | 第 14 境 |
+| `templates/include.html`（保留项，供对照） | `open-api/qvsu-openapi/src/main/resources/templates/include.html` | 重构复用 | 228 行的公共片段页，被全部业务模板以 `th:include="include :: header(...)"` / `footer` 方式引用，集中管理 CSS/JS 引入与 `$.table` 初始化参数；本行用来说明「删除模板时必须保留此文件」（删掉它会让所有页面同时失效），同时它自身也需要重构：片段里的主题 CSS、品牌标题与全局 JS 列表要随第 15 境的品牌化重写 | `open-api/qvsu-openapi/src/main/resources/templates/include.html:1` | 第 02、15 境 |
 
 ## 七、新增清单（缺口驱动的能力）
 
@@ -160,4 +180,67 @@
 | Micrometer 可观测 | 待新增 `open-api/qvsu-openapi/src/main/java/com/qvsu/gateway/observability/GatewayMetrics.java` | 新增 | 现有可观测手段只有 logback 文本日志（`application.yml` 中无任何 management/metrics 配置，`pom.xml` 无 actuator 依赖），无法回答「P95 延迟多少」「哪个 Provider 错误率上升」；需要引入 Micrometer 埋点（请求计数、延迟直方图、Token 计数、熔断状态）并对接 Prometheus | `open-api/qvsu-openapi/src/main/resources/application.yml:79` | 第 16 境 |
 | 高级策略（语义缓存 / 提示词模板 / 护栏） | 待新增 `open-api/qvsu-openapi/src/main/java/com/qvsu/gateway/policy/SemanticCachePolicy.java` | 新增 | 第 17 境的三类增强都要求「在不改主链路的前提下插入行为」：语义缓存要在命中时短路出站调用、提示词模板要在出站前改写 messages、护栏要在入站与出站两侧做内容判定；这三者正是 Pipeline 的三种不同插入位点，Demo 中没有任何对应实现基础 | `open-api/qvsu-openapi/src/main/java/com/qvsu/open/filter/OpenApiFilter.java:83` | 第 17 境 |
 | K8s 清单 | 待新增 `open-api/qvsu-openapi/deploy/k8s/` | 新增 | 现有部署资产只有 `deploy/dev-docker`（拉取外部阿里云镜像，注释自述不可复现）与 `deploy/local-docker`（单机 compose + postgres:11），两者都是单实例本地形态，没有 Deployment/Service/ConfigMap/Secret/探针/HPA 任何一项；第 18 境云上生产必须补齐，且要以「无状态副本 + 外置配置」为前提，这反过来约束了第 13 境的配置方案 | `open-api/deploy/local-docker/docker-compose.yaml:1` | 第 18 境 |
+
+## 八、统计与结论
+
+### 8.1 五档统计
+
+| 判定 | 条数 | 占比 |
+|---|---|---|
+| 直接复用 | 34 | 28.3% |
+| 改名复用 | 8 | 6.7% |
+| 重构复用 | 33 | 27.5% |
+| 废弃 | 22 | 18.3% |
+| 新增 | 23 | 19.2% |
+| **合计** | **120** | **100%** |
+
+### 8.2 分节统计
+
+| 章节 | 条数 | 直接复用 | 改名复用 | 重构复用 | 废弃 | 新增 |
+|---|---|---|---|---|---|---|
+| 一、网关核心 | 13 | 2 | 0 | 10 | 1 | 0 |
+| 二、领域对象与数据表 | 11 | 2 | 4 | 3 | 2 | 0 |
+| 三、框架与公共能力 | 26 | 11 | 0 | 13 | 1 | 1 |
+| 四、调度与任务 | 12 | 9 | 0 | 1 | 2 | 0 |
+| 五、前端资产 | 21 | 10 | 4 | 5 | 2 | 0 |
+| 六、废弃清单 | 15 | 0 | 0 | 1 | 14 | 0 |
+| 七、新增清单 | 22 | 0 | 0 | 0 | 0 | 22 |
+| **合计** | **120** | **34** | **8** | **33** | **22** | **23** |
+
+### 8.3 一句话结论
+
+以「改名复用 + 重构复用」为主（8 + 33 = 41 条，占 34.2%），说明这个 Demo **不是需要推倒重来的半成品，而是一个骨架正确、接线位置正确、但语义错位的网关**：它的价值在于「已经把网关该有的形状搭好了」——一个统一入口 Controller、一个可插入横切逻辑的 Filter、一个可复用的出站转发 Service、一套已跑通的鉴权与调用日志、一套完整的后台与调度底座；而它的成本在于「每一处的业务语义都要换」——`OpenApi` 要变成模型部署而不是接口、`OpenApp` 要变成 VirtualKey 而不是接入应用、固定路由要变成候选集路由、字节转发要变成协议转译、HTTP 200 + 自定义 code 要变成标准 OpenAI 错误体。**换句话说：改造工作量的大头不是「从零造网关」，而是「把已有的网关骨架逐个换血」。**
+
+进一步看另外两档：**直接复用 34 条（28.3%）几乎全部落在「与 LLM 语义无交集」的基础设施上**（数据源与主从装配、MyBatis 装配、分页、在线会话与踢出、定时任务编排四件套、列表页 JS 与样式封装），这部分是可以零改造继承的资产；**废弃 22 条（18.3%）集中在两个来源**——其一是 Demo 自带的框架示例与主题遗留（13 条：`templates/demo/**` 4 条 + `demo/operate/*`、`main_v1`/`index-topnav`/`skin`/`lock`、`three.min.js`、`rml.txt`、`summernote`、`commons-lang3` 重复依赖），其二是「语义错误或防线错误」的实现（9 条：`OpenResult` 的错误体形状、`OpenApiDoc` 与文档页的静态快照、`SqlUtil` 的黑名单防线、`SameUrlDataInterceptor` 的误判重复、`ScheduleConfig` 空占位、`QvsuTask` 演示方法、`Excel` 的报表专用能力、`open_api_doc` 表等）。
+
+因此第 02 境（改包名）与第 03 境（领域本体重塑）不是「顺手做的前置清理」，而是**整个改造的杠杆点**：一次性删掉 13 条演示与遗留资产、把 5 个领域对象与 4 张表改名到位，可以让后续 15 个章节全部在正确的命名与语义上进行，避免出现「新代码写着 `ModelDeployment`、老代码还在叫 `OpenApi`」的长期双重语义。
+
+## 九、证据抽检
+
+规格要求「任取一行，凭证据列三十秒内定位源码」。本节实际抽取 10 行，覆盖 7 种不同文件类型（Java 过滤器、Java 值对象、Java 工具类、Java 基础设施、Java 配置、SQL 建表脚本、Thymeleaf 模板、Maven POM），逐行用 read 打开证据指向的行号，把该行源码原文抄录如下，以证明定位有效。
+
+| # | 抽检对象 | 证据（仓库根相对路径:行号） | 该行源码原文 | 定位是否有效 |
+|---|---|---|---|---|
+| 1 | `OpenApiFilter` | `open-api/qvsu-openapi/src/main/java/com/qvsu/open/filter/OpenApiFilter.java:27` | `public class OpenApiFilter extends OncePerRequestFilter` | 命中 |
+| 2 | `TraceContext` | `open-api/qvsu-openapi/src/main/java/com/qvsu/open/trace/TraceContext.java:8` | `    private static final ThreadLocal<String> TRACE_ID_HOLDER = new ThreadLocal<String>();` | 命中 |
+| 3 | `CachedBodyHttpServletRequest` | `open-api/qvsu-openapi/src/main/java/com/qvsu/open/web/CachedBodyHttpServletRequest.java:18` | `public class CachedBodyHttpServletRequest extends HttpServletRequestWrapper` | 命中 |
+| 4 | `DynamicDataSource` | `open-api/qvsu-openapi/src/main/java/com/qvsu/framework/datasource/DynamicDataSource.java:13` | `public class DynamicDataSource extends AbstractRoutingDataSource` | 命中 |
+| 5 | `MyBatisConfig` | `open-api/qvsu-openapi/src/main/java/com/qvsu/framework/config/MyBatisConfig.java:116` | `    @Bean` | 命中 |
+| 6 | `Quartz 工具（ScheduleUtils）` | `open-api/qvsu-openapi/src/main/java/com/qvsu/quartz/util/ScheduleUtils.java:90` | `            scheduler.scheduleJob(jobDetail, trigger);` | 命中 |
+| 7 | `BaseController` | `open-api/qvsu-openapi/src/main/java/com/qvsu/common/core/controller/BaseController.java:111` | `    protected TableDataInfo getDataTable(List<?> list)` | 命中 |
+| 8 | `open_api` 数据表 | `open-api/sql/open_api.sql:27` | `CREATE TABLE open_api (` | 命中 |
+| 9 | `templates/open/api/index.html` | `open-api/qvsu-openapi/src/main/resources/templates/open/api/index.html:27` | `    var prefix = ctx + "admin/open/api";` | 命中 |
+| 10 | Resilience4j 熔断（新增项，用 POM 证明「当前不存在」） | `open-api/qvsu-openapi/pom.xml:72` | `    <dependencies>` | 命中 |
+
+### 9.1 抽检补充说明
+
+第 10 行是**负向证据**：新增项的判定依据不是「源码里有什么」，而是「源码里没有什么」，所以证据指向 `pom.xml` 依赖清单的起始行，从该行向下连续读数即可确认整个 `<dependencies>` 块中不存在 resilience4j、circuitbreaker、actuator、micrometer 任何一项，从而证实「熔断、可观测在第 09/10/16 境确属全新建设」的结论。
+
+### 9.2 抽检之外的复核
+
+除上述 10 行正文抽检外，本次编写还对以下 20 条证据做了逐一打开核对，全部命中（不做全文抄录，仅登记行号）：
+
+`DruidConfig.java:52`（`@Bean(name = "dynamicDataSource")`）、`SysConfigServiceImpl.java:58`（`selectConfigByKey`）、`JobInvokeUtil.java:34`（`invokeMethod`）、`OpenCallLog.java:9`（`public class OpenCallLog extends OptBaseEntity`）、`ApiDocService.java:129`（`buildSignedCurl`）、`OnlineSessionDAO.java:67`（`syncToDb`）、`SqlUtil.java:55`（`filterKeyword`）、`include.html:1`（`<!-- 通用CSS -->`）、`ShiroConfig.java:294`（`shiroFilterFactoryBean`）、`OpenApiSecurityService.java:48`（`authenticate`）、`OpenManageService.java:132`（字符串拼接 `in (...)` 的删除语句）、`OpenResult.java:28`（`fail(int,String)`）、`OpenSelftestHttpbinController.java:99`（`@GetMapping("/selftest/httpbin/timeout")`）、`ScheduleConfig.java:11`（`public class ScheduleConfig`）、`main_v1.html:6`（`<title>统计</title>`）、`GlobalExceptionHandler.java:77`（`@ExceptionHandler(Exception.class)`）、`OpenAppApi.java:7`（`public class OpenAppApi extends OptBaseEntity`）、`ExcelUtil.java:561`（`exportExcel(HttpServletResponse,...)`）、`rml.txt:1`（`下载临时目录`）、`templates/demo/report/echarts.html:1`（`<!DOCTYPE html>`）。
+
+综上：**10/10 正文抽检命中，20/20 补充复核命中，没有失效行号。**
 

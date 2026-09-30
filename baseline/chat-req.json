@@ -1,0 +1,11 @@
+{
+  "model": "coding-fast",
+  "messages": [
+    {
+      "role": "user",
+      "content": "ping"
+    }
+  ],
+  "max_tokens": 32,
+  "stream": false
+}

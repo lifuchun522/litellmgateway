@@ -24,7 +24,7 @@ echo "[3/5] Rebuild and start services..."
 docker compose -f "$COMPOSE_FILE" up -d --build
 
 echo "[4/5] Restart app once to avoid startup race with PostgreSQL..."
-docker restart openapi-app >/dev/null
+docker restart llm-gateway >/dev/null
 
 echo "[5/5] Wait for app ready and show service status..."
 wait_ready() {
@@ -40,11 +40,11 @@ wait_ready() {
 }
 
 if ! wait_ready 90; then
-  docker restart openapi-app >/dev/null
+  docker restart llm-gateway >/dev/null
 fi
 
 if ! wait_ready 120; then
-  echo "openapi-app not ready within timeout"
+  echo "llm-gateway not ready within timeout"
   exit 1
 fi
 

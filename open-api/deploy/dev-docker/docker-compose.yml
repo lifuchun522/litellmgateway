@@ -1,9 +1,11 @@
 version: '3.8'
 
+# 第 02 境换骨：镜像名与容器名同步改为新项目口径。
+# 注意：镜像里的产物名已改为 llm-gateway.jar（见同目录 Dockerfile）。
 services:
-  openapi:
-    image: registry.cn-shenzhen.aliyuncs.com/chaoqs/qvsu_open_api:qvsu_open_api_2026-03-27-13-12-27
-    container_name: qvsu-openapi
+  llm-gateway:
+    image: registry.cn-shenzhen.aliyuncs.com/juntop/public:llm-gateway-local
+    container_name: llm-gateway
     environment:
       TZ: Asia/Shanghai
     ports:

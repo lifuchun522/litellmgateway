@@ -1,0 +1,30 @@
+# local profile：本机开发用数据源与日志级别。
+# 只放数据源与日志级别，不放业务配置（业务配置一律在 application.yml）。
+spring:
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driverClassName: org.postgresql.Driver
+    driver-class-name: org.postgresql.Driver
+    druid:
+      master:
+        url: ${LLMGATEWAY_DB_URL:jdbc:postgresql://localhost:5432/jd_openapi?currentSchema=public&stringtype=unspecified}
+        username: ${LLMGATEWAY_DB_USER:postgres}
+        password: ${LLMGATEWAY_DB_PASSWORD:123456}
+      slave:
+        enabled: false
+      initialSize: 5
+      minIdle: 5
+      maxActive: 20
+      maxWait: 60000
+      connectTimeout: 30000
+      socketTimeout: 60000
+      validationQuery: SELECT 1
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+
+logging:
+  level:
+    cloud.joysky.llmgateway: debug
+    cloud.joysky.llmgateway.open: debug
+    org.springframework: warn

@@ -1,0 +1,18 @@
+# 旧前缀兼容验证专用 profile：只有 qvsu: 段，完全不含 llmgateway: 段。
+#
+# 用途：模拟「老客户只升级了 jar、配置前缀还没改」的场景，验证兼容期行为——
+# 应用必须照常启动，并且把 qvsu.* 的值搬到有效配置里（见 common/config/LegacyPrefixCompat）。
+#
+# 用法：
+#   java -jar target/llm-gateway.jar --server.port=5659 \
+#        --spring.config.additional-location=classpath:/application-prefixcompat.yml
+# 断言：
+#   GET /internal/compat/config-prefix
+#   -> legacyApplied=true, effectiveName=轻量级 LLM 网关（旧前缀），effectiveVersion=legacy-1.0.0
+qvsu:
+  name: 轻量级 LLM 网关（旧前缀）
+  version: legacy-1.0.0
+  copyrightYear: 2026
+  demoEnabled: true
+  profile: ./data/uploadPath
+  addressEnabled: false

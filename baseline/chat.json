@@ -1,0 +1,1 @@
+﻿{"name":"chat","method":"POST","path":"/v1/chat/completions","httpStatus":302,"location":"/login","contentType":""}

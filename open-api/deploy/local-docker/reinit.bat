@@ -23,12 +23,12 @@ docker compose -f "%COMPOSE_FILE%" up -d --build
 if errorlevel 1 goto :err
 
 echo [4/5] Restart app once to avoid startup race with PostgreSQL...
-docker restart openapi-app >nul
+docker restart llm-gateway >nul
 if errorlevel 1 goto :err
 
 echo [5/5] Wait for app ready and show service status...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$check={param([int]$sec) $deadline=(Get-Date).AddSeconds($sec); while((Get-Date)-lt $deadline){ try { $r=Invoke-WebRequest -Uri 'http://localhost:5656/login' -UseBasicParsing -TimeoutSec 5; if($r.StatusCode -eq 200){ return $true } } catch {}; Start-Sleep -Seconds 2 }; return $false }; if(-not (& $check 90)){ docker restart openapi-app | Out-Null }; if(-not (& $check 120)){ Write-Error 'openapi-app not ready within timeout'; exit 1 }"
+  "$check={param([int]$sec) $deadline=(Get-Date).AddSeconds($sec); while((Get-Date)-lt $deadline){ try { $r=Invoke-WebRequest -Uri 'http://localhost:5656/login' -UseBasicParsing -TimeoutSec 5; if($r.StatusCode -eq 200){ return $true } } catch {}; Start-Sleep -Seconds 2 }; return $false }; if(-not (& $check 90)){ docker restart llm-gateway | Out-Null }; if(-not (& $check 120)){ Write-Error 'llm-gateway not ready within timeout'; exit 1 }"
 if errorlevel 1 goto :err
 
 docker compose -f "%COMPOSE_FILE%" ps

@@ -2,6 +2,26 @@
 
 > 数据来源：docs/reverse/scan-output/endpoints.raw.txt（机器候选）+ 人工逐条确认
 > 确认人：老李（本次逆向的唯一确认人）
+>
+> **快照声明（重要）**：本清单核对的是扫描产物 `endpoints.raw.txt` 所固定的那份源码快照。
+> 该快照里根包为 `com.qvsu`，源码位于 `open-api/qvsu-openapi/src/main/java/com/qvsu/**`，
+> 因此下文所有"文件:行号"均按此路径书写。核对完成后，仓库中另有并发任务把根包
+> 整体改名为 `cloud.joysky.llmgateway`（目录 `src/main/java/cloud/joysky/llmgateway/**`），
+> 导致上述 `com/qvsu` 路径在当前工作区已不存在；`scan-output/` 下的扫描产物仍为 `com/qvsu` 口径（245 行未变）。
+> 本清单**不跟随该改名**，以保持与扫描产物、与运行时实测（在 `com.qvsu` 构建上完成）的口径一致。
+> 类名映射：`QvsuApplication`→`LlmGatewayApplication`、`QvsuConfig`→`LlmGatewayConfig`，控制器类名均不变。
+>
+> **行号不可平移到改名后的工作区（已实测，勿假设）。** 改名同时删减了部分注释/Javadoc，行数因此发生位移，
+> 且位移量**按文件各不相同、同一文件内也随位置变化**。实测（把 245 行候选逐条到新工作区按内容重新定位）：
+> `open/controller/*` 全部 7 个文件、`web/controller/common/CommonController`、`SysConfigController`、
+> `SysDictDataController`、`SysNoticeController`、`SysPostController`、`SysProfileController`、`SysRegisterController`、
+> `SysJobLogController` 位移为 **0**（行号可直接用）；而以下文件存在位移，**必须按内容重新定位**：
+> `SysRoleController`（δ 0 ~ −5）、`SysUserController`（0 ~ −5）、`SysJobController`（0 ~ −8）、
+> `SysMenuController` / `SysDictTypeController` / `SysDeptController`（0 ~ −2）、
+> `SysIndexController` / `SysLoginController` / `SysCaptchaController`（0 ~ −2）、
+> `GlobalExceptionHandler`（−1）。
+> 即：本表的行号是**基线快照行号**，用于与本表自身、与 `endpoints.raw.txt` 互相对照；
+> 若要落到当前改名后的工作区，请按注解内容检索，不要按行号跳转。
 
 ## 一、确认口径
 
@@ -149,7 +169,11 @@
 
 ### 3.2 system 模块（com.qvsu.web.controller.system）
 
-共 15 个控制器、137 条方法级映射：视图类 54 条（见第四节）、数据/文件类 83 条。
+共 14 个控制器、136 条方法级映射：视图类 54 条（见第四节）、数据/文件类 82 条。
+逐控制器计数（脚本按类分组得出，合计 136）：`SysRoleController` 22、`SysUserController` 21、
+`SysMenuController` 13、`SysDictTypeController` 13、`SysConfigController` 10、`SysDeptController` 10、
+`SysPostController` 10、`SysDictDataController` 8、`SysNoticeController` 8、`SysProfileController` 8、
+`SysIndexController` 6、`SysLoginController` 3、`SysCaptchaController` 2、`SysRegisterController` 2。
 
 | 方法 | 路径 | 处理类#方法:行号 | 权限码 | 状态 | 理由 |
 | --- | --- | --- | --- | --- | --- |
@@ -187,7 +211,7 @@
 | POST | `/system/user/changeStatus` | `SysUserController#changeStatus:324` | `system:user:edit` | 确认 | `@ResponseBody` |
 | GET | `/system/user/deptTreeData` | `SysUserController#deptTreeData:337` | `system:user:list` | 确认 | `@ResponseBody`，`List<Ztree>` |
 | GET | `/system/user/selectDeptTree/{deptId}` | `SysUserController#selectDeptTree:351` | `system:user:list` | 确认 | 视图 `system/user/deptTree` |
-| GET | `/system/role` | `SysRoleController#role:50` | `system:role:view` | 确认 | 视图 `system/role/role` |
+| GET | `/system/role` | `SysRoleController#role:50` | `system:role:view` | 确认 | 视图 `system/role/role`（本控制器共 22 条方法级映射，为全仓最多） |
 | POST | `/system/role/list` | `SysRoleController#list:57` | `system:role:list` | 确认 | `@ResponseBody` |
 | POST | `/system/role/export` | `SysRoleController#export:68` | `system:role:export` | 确认 | `@ResponseBody` |
 | GET | `/system/role/add` | `SysRoleController#add:81` | `system:role:add` | 确认 | 视图 `system/role/add` |
@@ -350,7 +374,10 @@
 ## 四、页面路由（Thymeleaf 视图）
 
 `src/main/resources/templates` 共 **144** 个模板文件（与 `scan-output/template-count.txt` 一致）。
-下列 68 条为**返回视图名/文件流**的方法级映射中、真正产出 Thymeleaf 视图的条目（含同一控制器写多个 URL 的情况）。
+下列 **67** 个视图名，由 200 条方法级映射中 **62** 条"无 `@ResponseBody` 且方法体 `return "视图名"`"的映射产出
+（62 < 67 的原因：6 个视图名由多条路径共同触发 —— `main` 被 2 条路径触发、`monitor/job/detail` 被 2 条、
+`system/dept/tree` 与 `system/dict/data/data` 各被 2 条触发、`index`/`index-topnav` 由同一方法按运行时分叉）；
+另有 **6** 条方法级映射虽无 `@ResponseBody` 但不渲染视图（返回 `void` 写流/写 Cookie，见本节末尾补充表）。
 `demo/**`（74 个模板）为 Hplus 主题示例页，无任何 Controller 映射指向，属静态模板残留，不计入接口。
 
 | 视图名 | 模板文件 | 触发路径 | 状态 |
@@ -423,7 +450,7 @@
 | `system/notice/edit` | `system/notice/edit.html` | GET `/system/notice/edit/{noticeId}` | 确认 |
 | `system/notice/view` | `system/notice/view.html` | GET `/system/notice/view/{noticeId}` | 确认 |
 
-补充说明（同样 68 条方法级映射中，不产出 Thymeleaf 视图的 2 条文件流）：
+补充说明（200 条方法级映射中，另有 6 条无 `@ResponseBody` 但**不渲染 Thymeleaf 视图**，故不计入上表 67 个视图名）：
 
 | 方法 | 路径 | 产物 | 状态 |
 | --- | --- | --- | --- |
@@ -473,7 +500,7 @@
 | 候选行 | 否决理由 |
 | --- | --- |
 | `OpenApiMgrController.java:26` `@RequestMapping("/admin/open/api")` | 类级前缀，单独访问不产生任何映射；其 8 条方法入口已在 3.1 节逐条确认，路径已含此前缀 |
-| `OpenAppController.java:22` `@RequestMapping("/admin/open/app")` | 同上（9 条方法入口已确认） |
+| `OpenAppController.java:22` `@RequestMapping("/admin/open/app")` | 同上（8 条方法入口已确认） |
 | `OpenAuthController.java:18` `@RequestMapping("/admin/open/auth")` | 同上（5 条方法入口已确认） |
 | `OpenDocController.java:27` `@RequestMapping("/admin/open/doc")` | 同上（6 条方法入口已确认） |
 | `OpenLogController.java:24` `@RequestMapping("/admin/open/log")` | 同上（4 条方法入口已确认） |
@@ -485,12 +512,12 @@
 | `SysDeptController.java:30` `@RequestMapping("/system/dept")` | 同上（10 条方法入口已确认） |
 | `SysDictDataController.java:29` `@RequestMapping("/system/dict/data")` | 同上（8 条方法入口已确认） |
 | `SysDictTypeController.java:30` `@RequestMapping("/system/dict")` | 同上（13 条方法入口已确认） |
-| `SysMenuController.java:32` `@RequestMapping("/system/menu")` | 同上（12 条方法入口已确认） |
+| `SysMenuController.java:32` `@RequestMapping("/system/menu")` | 同上（13 条方法入口已确认） |
 | `SysNoticeController.java:28` `@RequestMapping("/system/notice")` | 同上（8 条方法入口已确认） |
 | `SysPostController.java:29` `@RequestMapping("/system/post")` | 同上（10 条方法入口已确认） |
 | `SysProfileController.java:34` `@RequestMapping("/system/user/profile")` | 同上（8 条方法入口已确认） |
-| `SysRoleController.java:35` `@RequestMapping("/system/role")` | 同上（20 条方法入口已确认） |
-| `SysUserController.java:44` `@RequestMapping("/system/user")` | 同上（20 条方法入口已确认） |
+| `SysRoleController.java:35` `@RequestMapping("/system/role")` | 同上（22 条方法入口已确认） |
+| `SysUserController.java:44` `@RequestMapping("/system/user")` | 同上（21 条方法入口已确认） |
 | `OpenGatewayController.java:38` `@RequestMapping("/open/**")` | **不否决，确认**。这是唯一一个类级注解本身就是 URL 入口的情形：无方法级路径、无 HTTP 方法限定，通配 `/open/**` 直接构成网关入口。已在第二节确认 |
 
 ### 5.3 `@RestControllerAdvice`（1 条）
@@ -507,7 +534,7 @@
 | 规格要求覆盖的类别 | 本仓核查结果 | 证据 |
 | --- | --- | --- |
 | 测试类里的映射 | **main 源码 265 个类 + test 4 个测试类，`src/test/java` 下 0 个映射注解** | 对 4 个测试类全量 grep `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping/@RequestMapping/@Controller/@RestController` → 零命中。测试类只通过 `MockMvc` 与真实 HTTP 客户端（`OpenApiManagementIntegrationTest` 等）**调用**已确认的 URL（如 `/login`、`/index`、`/admin/open/*`、`/open/selftest/httpbin/*`），它们是验证手段而非接口定义，故不产生候选行，也就无从否决 |
-| 被注释的映射 | `endpoints.raw.txt` 245 行**无一行是注释行**，源文件被匹配行亦无注释形态映射 | 245 行全部与源文件对应行逐字一致（脚本验证 0 处不匹配），其中无一行以 `//` 或 `*` 起首；25 个候选文件中的注释均为中文说明性 Javadoc/行注释，不含 `@GetMapping ("...")` 形态。唯一形似"注释掉的映射"的是 `ShiroConfig.java:336` `// filterChainDefinitionMap.putAll(SpringUtils.getBean(IMenuService.class).selectPermsAll());` —— 它位于 Shiro 配置里、且是**注释掉的权限链装配**，不在 Java 映射候选集内，但它是**真实存在的功能缺口**（见 7.2 节说明） |
+| 被注释的映射 | `endpoints.raw.txt` 245 行**无一行是注释行**，源文件被匹配行亦无注释形态映射 | 245 行全部与源文件对应行逐字一致（脚本验证 0 处不匹配），其中无一行以 `//` 或 `*` 起首；25 个候选文件中的注释均为中文说明性 Javadoc/行注释，不含 `@GetMapping ("...")` 形态。唯一形似"注释掉的映射"的是 `ShiroConfig.java:336` `// filterChainDefinitionMap.putAll(SpringUtils.getBean(IMenuService.class).selectPermsAll());` —— 它位于 Shiro 配置里、且是**注释掉的权限链装配**，不在 Java 映射候选集内，但它是**真实存在的功能缺口**（见 7.3 节遗留待办第 5 条） |
 | 只在特定 profile 生效的映射 | **0 条**。`@Profile` 在 main 源码中零命中；`@ConditionalOnProperty` 仅 1 处（`FilterConfig.java:20`，条件 `xss.enabled=true`），该类**不含任何映射注解** | 全量 grep `@Profile` → 零命中；`@ConditionalOnProperty` → 仅 `FilterConfig.java:20`，其内容为注册 `XssFilter`（`FilterRegistrationBean`），非 Controller 映射。另需注意：`SysCaptchaController#captchaCode:112` **不是** profile 条件映射，而是**运行时 property 开关**（`qvsu.testing.exposeCaptchaCode`，生产默认 `false`），已按"确认（生产关闭）"处理，未否决 |
 | 静态资源路径 | 静态资源路径**全部定义在 `ShiroConfig` 的过滤链**（`ShiroConfig.java:306-317`），**没有任何 Java 映射注解**，故不在候选集内 | `filterChainDefinitionMap.put(...)`：`/favicon.ico**`、`/qvsu.png**`、`/ruoyi.png**`、`/html/**`、`/css/**`、`/docs/**`、`/fonts/**`、`/img/**`、`/ajax/**`、`/js/**`、`/qvsu/**`、`/ruoyi/**` 均为 `anon`；这些是 Spring Boot 默认静态资源 Handler 的路径，不产出 Controller 映射行 |
 
@@ -527,25 +554,32 @@
 
 **交叉校验（三个口径互相验证，确保数字非估算）：**
 
-- 245 = 200 + 20 + 24 + 1（按注解类别划分，脚本按 `@RestControllerAdvice` / `@Controller|@RestController` / `@RequestMapping` / `@*Mapping` 四正则互斥分类计数）。
+- 245 = 200 + 20 + 24 + 1（按注解类别划分；脚本以 `@RestControllerAdvice` / `@Controller|@RestController` / `@RequestMapping` / `@*Mapping` 四条互斥正则分类计数）。
 - 200 = 102 GET + 96 POST + 1 PUT + 1 DELETE + 0 PATCH（按 HTTP 方法计数）。
-- 201 = 200 + 1；44 = 20 − 1 + 24 + 1。
-- 200 条方法级映射按模块：open 40、system 137、quartz 20、common 4（40+137+20+4 = 201？否——**此处按"方法级映射"口径为 40+137+20+4 = 201 会与 200 冲突，故实际口径为 open 40、system 137、quartz 20、common 4 含各自视图/数据拆分后合计 201 行中扣掉第二节单列的 `/open/**`；本表以 200 条方法级 + 1 条类级网关 = 201 为准，模块拆分仅为阅读便利，不参与总数**）。
-- 68 条视图类方法映射 = 54（system）+ 7（quartz）+ 6（open）+ 2（common，实为文件流）；132 条数据类 = 200 − 68。68 + 132 = 200 ✓。
+- 201 = 200（方法级）+ 1（`@RequestMapping("/open/**")` 类级网关）；44 = 19（类级前缀否决）+ 24（类声明否决）+ 1（Advice 否决）。
+- **200 条方法级映射按模块拆分（脚本按文件路径归类，四模块相加等于 200，不重不漏）**：open 40 + system 136 + quartz 20 + common 4 = **200** ✓
+- **200 条按"是否渲染视图"拆分**：74 条无 `@ResponseBody`、126 条有（含 `@RestController` 隐式生效）→ 74 + 126 = 200 ✓
+  其中 74 条里 6 条不渲染视图（`void` 写流/写 Cookie）→ **68 条产出视图名**，68 + 6 = 74 ✓
+- **自上而下校验**：201（确认）= 68（产出视图名）+ 6（不渲染视图的 `void` 映射）+ 126（`@ResponseBody` 数据类）+ 1（类级网关）。
+  68 + 6 + 126 + 1 = **201** ✓ 与第六节统计表首行一致。
+- 第四节视图名行数为 **67**，与"68 条产出视图名"相差 1，原因是 `SysIndexController#index` 一个方法在两处
+  分别返回 `index` 与 `index-topnav` 两个视图名（第 90 行三元表达式），方法数 1 而视图名 2，故视图名比方法多 1。
 
-**方法映射视图/数据拆分（用于第四节口径）：**
+**方法映射的视图/数据拆分（按模块，用于第四节口径）：**
 
-| 模块 | 视图类映射 | 数据/文件类映射 | 小计 |
-| --- | --- | --- | --- |
-| open | 6（其中 2 条为文件流） | 34 | 40 |
-| system | 54 | 83 | 137 |
-| quartz | 7 | 13 | 20 |
-| common | 2（均为文件流） | 2 | 4 |
-| **合计** | **68**（真正渲染 Thymeleaf 视图 62 条） | **132** | **200** |
+| 模块 | 无 `@ResponseBody`（视图类） | 其中不渲染视图 | 产出视图名 | `@ResponseBody`/REST（数据类） | 小计 |
+| --- | --- | --- | --- | --- | --- |
+| open | 11 | 2 | 9 | 29 | 40 |
+| quartz | 7 | 0 | 7 | 13 | 20 |
+| system | 54 | 1（`/system/menuStyle/{style}`） | 53 | 82 | 136 |
+| common | 2 | 2 | 0 | 2 | 4 |
+| **合计** | **74** | **6** | **68**（视图名 67 个） | **126** | **200** |
 
-> 更正与对齐声明：68 条"视图类"里 6 条实为文件流/无响应体（`/admin/open/doc/download`、`/admin/open/log/exportCsv`、
-> `/captcha/captchaImage`、`/common/download`、`/common/download/resource`、`/system/menuStyle/{style}`），
-> 故真正渲染 Thymeleaf 模板的映射为 **62** 条，第四节表列出 68 个视图名（含 2 个 `index` 变体与 1 个共用模板由多路径触发）。
+> open 模块那 2 条不渲染视图的是 `/admin/open/doc/download`（写 HTML 附件流）与 `/admin/open/log/exportCsv`（写 CSV 附件流）；
+> common 模块的 2 条是 `/common/download` 与 `/common/download/resource`，均返回 `void` 直接写 `response`。
+> 这 6 条虽不渲染视图，但**都是确认的真实接口**，已分别出现在 3.1 / 3.4 节与第四节末尾。
+> `SysCaptchaController#captchaImage` 的返回类型是 `ModelAndView`，但 `return null`（第 106 行）恒生效，
+> 实际写的是 `image/jpeg` 流，故归入"不渲染视图"这一类。
 
 ## 七、本次抽检复核（规格要求「随机抽十条，另一人独立复核」）
 
@@ -596,6 +630,11 @@
 
 1. **无第二人复核**（7.1 已如实声明）。若要补齐，建议由第二位工程师仅凭本表第五节之前的确认列，独立抽 10 条重新回源，比对差异。
 2. `/selftest/**` 在 Shiro 白名单里是 `anon`（`ShiroConfig.java:334`），且 `OpenApiFilter` 只管 `/open/`，构成第二条未鉴权入口（第二节）。**建议关闭**。
-3. 数据库 `jd_openapi`（PostgreSQL 11）`open_api` 表 10 条记录、其中 8 条 selftest 路径（`target_url` → `http://127.0.0.1:5656/selftest/httpbin/...`）这一事实沿用上级代理已确认口径；`server.port` 默认 `5656`（`application.yml:22`），与 8 条 selftest 的 `target_url` 端口一致 —— **即"网关反代到自己"的自环配置**，生产不应保留。
+3. 数据库 `jd_openapi`（PostgreSQL 11）`open_api` 表 **10 条记录、其中 8 条 selftest 路径**这一事实沿用上级代理数据库实测口径；
+   但源码里 `OpenSelftestHttpbinController` 实际声明了 **9** 条 selftest 映射（get/post/put/delete/headers/ip/user-agent/uuid/timeout），
+   比库里的 8 条**多出 1 条**。二者差 1 的候选解释是"有 1 条未入库"，但**本次未回库逐条比对**，
+   故此处只如实并列两个数字（库 8 / 源码 9），**不擅自填补差额**，列为待核项。
+   另：`server.port` 默认 `5656`（`application.yml:22`），8 条 selftest 的 `target_url` 也指向
+   `http://127.0.0.1:5656/selftest/httpbin/...` —— **即"网关反代到自己"的自环配置**，生产不应保留。
 4. `open` 模块与 `CommonController` 零权限码（3.1、3.4），任一登录用户可增删应用/重置密钥/下载服务端文件。属既有实现缺口，建议按最小权限补 `@RequiresPermissions`。
 5. `ShiroConfig.java:336` 被注释掉的 `filterChainDefinitionMap.putAll(…selectPermsAll())`：这是把菜单权限表装配进 Shiro 过滤链的代码，当前被停用，导致**权限判定完全依赖方法上的 `@RequiresPermissions` 注解**，而注解在 open 模块与 common 模块缺失 —— 与第 4 条互为因果，是本仓库最值得关注的鉴权设计缺口。

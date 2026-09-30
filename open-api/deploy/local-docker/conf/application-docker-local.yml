@@ -1,11 +1,24 @@
-﻿spring:
+# Docker 本地编排专用 profile（由 SPRING_CONFIG_ADDITIONAL_LOCATION 挂载）。
+#
+# 第 02 境换骨：文件内容只做标识更新（本项目不改行为）。
+# 数据源用户名与口令在本文件里是编排内的测试值；真实部署一律走环境变量注入，不要提交真实口令。
+llmgateway:
+  name: 轻量级 LLM 网关
+  version: 1.0.0
+  profile: /app/data/uploadPath
+
+server:
+  port: 5656
+
+spring:
   datasource:
     driverClassName: org.postgresql.Driver
+    driver-class-name: org.postgresql.Driver
     druid:
       master:
         url: jdbc:postgresql://postgres:5432/jd_openapi?currentSchema=public&stringtype=unspecified
         username: postgres
-        password: 123456
+        password: ${LLMGATEWAY_DB_PASSWORD:123456}
 
 pagehelper:
   helperDialect: postgresql
@@ -13,3 +26,8 @@ pagehelper:
 shiro:
   user:
     captchaEnabled: true
+
+logging:
+  level:
+    cloud.joysky.llmgateway: info
+    org.springframework: warn
